@@ -17,14 +17,14 @@
 #
 project('experiment', 'cpp',
   meson_version: '>=1.4.0',
-  version : '0.1',
-  default_options : ['warning_level=3', 'cpp_std=c++20']
+  version: '0.1',
+  default_options: ['warning_level=3', 'cpp_std=c++20']
 )
 
-vcpkg = find_program('vcpkg.exe', dirs:['C:/vcpkg'], required : true)
+vcpkg = find_program('vcpkg.exe', dirs:['C:/vcpkg'], required: true)
 cmake = import('cmake') # https://mesonbuild.com/CMake-module.html
 pkg = import('pkgconfig') # https://mesonbuild.com/Pkgconfig-module.html
-# pkg.generate(libraries : libs1, description: 'Test Interop between Windows DirectX Graphics Infrastructure (DXGI) and Vulkan SDK')
+# pkg.generate(libraries: libs1, description: 'Test Interop between Windows DirectX Graphics Infrastructure (DXGI) and Vulkan SDK')
 fs = import('fs')
 
 root = meson.current_source_dir()
@@ -34,7 +34,7 @@ if get_option('buildtype') == 'debug'
 endif
 message('Using externals: ' + externals)
 
-add_global_arguments('-DNOMINMAX', language : 'cpp')
+add_global_arguments('-DNOMINMAX', language: 'cpp')
 
 public_headers = [
   'include/sample.hpp'
@@ -48,10 +48,13 @@ compiler = meson.get_compiler('cpp')
 dep1 = compiler.find_library('kernel32', required: true)
 dep2 = compiler.find_library('dispatch', dirs:[ externals / 'lib'],required: true)
 
-gtest = dependency('gtest', version: '>=1.14.0', method: 'pkg-config', required: false)
-if gtest.found() == false
-  gtest = dependency('GTest', method : 'cmake', modules : ['GTest::gtest'], required: true)
+gtest_sdk = dependency('gtest', version: '>=1.14.0', method: 'pkg-config', required: false)
+if gtest_sdk.found() == false
+  gtest_sdk = dependency('GTest', method: 'cmake', modules: ['GTest::gtest'], required: true)
 endif
+
+vulkan_sdk = dependency('vulkan', version: '>=1.3.250', method: 'auto', required: true)
+vulkan_headers_sdk = dependency('VulkanHeaders', method: 'cmake', modules: ['Vulkan::Headers'], required: true)
 
 exe1 = executable('testsuite',
   include_directories: join_paths('.', 'include'),
@@ -60,30 +63,32 @@ exe1 = executable('testsuite',
     source_files,
     'test/test_main.cpp'
   ],
-  dependencies: [ dep1, dep2, gtest ],
-  install : true,
+  dependencies: [ dep1, dep2, gtest_sdk, vulkan_sdk, vulkan_headers_sdk ],
+  install: true,
   install_dir: get_option('bindir')
 )
 
 # https://mesonbuild.com/Reference-manual_returned_env.html
 env = environment()
-# if host_machine.system() == 'windows'
-#   extra_args = '--use-links'
-#   depbins = root / 'externals/x64-windows/debug/bin'
-#   env.prepend('PATH', depbins)
-# endif
-# env.prepend('PATH', 'externals/x64-windows/bin')
+if host_machine.system() == 'windows'
+  # env.prepend('PATH', ...)
+endif
 
-copy1 = fs.copyfile(externals / 'bin/gtest.dll', install: true, install_dir: get_option('bindir'))
+copy_depends = [
+  fs.copyfile(externals / 'bin/gtest.dll', install: true, install_dir: get_option('bindir')),
+  fs.copyfile(externals / 'bin/dispatch.dll', install: true, install_dir: get_option('bindir')),
+  fs.copyfile(externals / 'bin/BlocksRuntime.dll', install: true, install_dir: get_option('bindir')),
+  fs.copyfile(externals / 'bin/vulkan-1.dll', install: true, install_dir: get_option('bindir'))
+]
 
-test('test 1', exe1,
-  args: [ '--none' ],
+test('test-1', exe1,
+  args: [ '--gtest_output=test-1.xml' ],
   env: env,
-  depends: [ copy1 ],
+  depends: copy_depends,
   protocol: 'gtest',
 )
 
-install_headers(public_headers, subdir : 'experiment')
+install_headers(public_headers, subdir: 'experiment')
 install_data(
   sources: [ 'LICENSE' ],
   install_dir: join_paths(get_option('infodir'), meson.project_name())
