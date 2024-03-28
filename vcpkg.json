@@ -1,0 +1,14 @@
+{
+    "name": "windows-vulkan-experiment",
+    "version-semver": "0.1.0",
+    "description": "...",
+    "homepage": "https://github.com/luncliff",
+    "maintainers": "Park DongHa. <luncliff@gmail.com>",
+    "supports": "windows",
+    "dependencies": [
+        "libdispatch",
+        "vulkan",
+        "vulkan-hpp",
+        "gtest"
+    ]
+}
