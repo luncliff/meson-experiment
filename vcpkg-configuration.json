@@ -7,10 +7,11 @@
     "registries": [
         {
             "packages": [
-                "libdispatch",
-                "zenny-atomic"
+                "opencl",
+                "opencl-headers",
+                "libdispatch"
             ],
-            "baseline": "0c8c9afb1329ea8158e77425e623c02098a2a755",
+            "baseline": "5c480eafdaacad6d4a1797dd794473e1eac81b4e",
             "kind": "git",
             "repository": "https://github.com/luncliff/vcpkg-registry"
         }

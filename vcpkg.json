@@ -6,9 +6,12 @@
     "maintainers": "Park DongHa. <luncliff@gmail.com>",
     "supports": "windows",
     "dependencies": [
+        "spdlog",
         "libdispatch",
         "vulkan",
         "vulkan-hpp",
-        "gtest"
+        "opencl",
+        "gtest",
+        "benchmark"
     ]
 }
