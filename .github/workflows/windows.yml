@@ -91,12 +91,14 @@ jobs:
       - name: "Run MSBuild"
         run: |
           MSBuild experiment.sln `
+            /p:VcpkgEnableManifest=false `
             /p:Configuration=Debug /p:Platform=x64
         working-directory: build-x64-windows
 
       - name: "Run meson(test)"
         id: meson-test
         run: |
+          meson compile -C "build-x64-windows"
           meson test -C "build-x64-windows"
 
       - uses: EnricoMi/publish-unit-test-result-action/windows@v2
@@ -105,19 +107,19 @@ jobs:
           files: |
             build-x64-windows\test-*.xml
 
-      - name: "Run meson(benchmark)"
-        id: meson-benchmark
-        run: |
-          meson test -C "build-x64-windows" --benchmark
+      # - name: "Run meson(benchmark)"
+      #   id: meson-benchmark
+      #   run: |
+      #     meson test -C "build-x64-windows" --benchmark
 
-      - uses: benchmark-action/github-action-benchmark@v1.20.1
-        if: steps.meson-benchmark.outcome == 'success'
-        with:
-          tool: 'googlecpp'
-          output-file-path: build-x64-windows/benchmark-results.json
-          auto-push: false
-          fail-on-alert: false
-          summary-always: true
+      # - uses: benchmark-action/github-action-benchmark@v1.20.1
+      #   if: steps.meson-benchmark.outcome == 'success'
+      #   with:
+      #     tool: 'googlecpp'
+      #     output-file-path: build-x64-windows/benchmark-results.json
+      #     auto-push: false
+      #     fail-on-alert: false
+      #     summary-always: true
 
       - uses: actions/upload-artifact@v4.3.1
         if: always()
