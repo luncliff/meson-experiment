@@ -2,6 +2,9 @@ name: "Windows"
 
 on: [push, pull_request, workflow_dispatch]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -24,28 +27,63 @@ jobs:
           version: "1.3.239.0"
           cache: true
 
-      - uses: lukka/get-cmake@v3.29.2
-      - uses: lukka/run-vcpkg@v11.5
+      - uses: ConorMacBride/install-package@v1
         with:
-          vcpkgGitCommitId: "C:/vcpkg" # VCPKG_INSTALLATION_ROOT
+          choco: pkgconfiglite
+
+      - uses: lukka/get-cmake@v3.29.2
+
+      - uses: actions/cache/restore@v4
+        id: cache-restore
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-caches
+            ${{ runner.temp }}/vcpkg-downloads
+          key: "${{ runner.os }}-${{ hashFiles('vcpkg.json') }}"
+
+      - name: "Create vcpkg folders"
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          New-Item -Type Directory -Force -Path "${{ runner.temp }}/vcpkg-caches"
+          New-Item -Type Directory -Force -Path "${{ runner.temp }}/vcpkg-downloads"
+        shell: pwsh
+
+      - uses: lukka/run-vcpkg@v11.5
+        id: vcpkg
+        with:
+          vcpkgDirectory: "C:/vcpkg" # VCPKG_INSTALLATION_ROOT
+          vcpkgGitCommitId: "a34c873a9717a888f58dc05268dea15592c2f0ff" # 2024.03.25
           runVcpkgInstall: true
           runVcpkgFormatString: '[`install`, `--clean-buildtrees-after-build`, `--clean-packages-after-build`, `--triplet`, `$[env.VCPKG_DEFAULT_TRIPLET]`, `--x-install-root`, `$[env.VCPKG_INSTALL_DIR]`]'
         env:
           VCPKG_INSTALL_DIR: "${{ github.workspace }}/externals"
+          VCPKG_DEFAULT_BINARY_CACHE: "${{ runner.temp }}/vcpkg-caches"
+          VCPKG_DOWNLOADS: "${{ runner.temp }}/vcpkg-downloads"
+
+      - uses: actions/cache/save@v4
+        if: steps.vcpkg.outcome == 'success'
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-caches
+            ${{ runner.temp }}/vcpkg-downloads
+          key: "${{ runner.os }}-${{ hashFiles('vcpkg.json') }}"
 
       - name: "Run meson(setup)"
+        id: meson-setup
         run: |
           meson setup --backend vs2022 --vsenv `
-            --prefix "$workspace/install" `
+            --prefix "${{ github.workspace }}/install" `
             --buildtype debug `
-            --pkg-config-path "$workspace/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}/debug/lib/pkgconfig" `
-            --build.pkg-config-path "$workspace/externals/${{ env.VCPKG_TARGET_TRIPLET }}/debug/lib/pkgconfig" `
-            --cmake-prefix-path "$workspace/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}" `
-            --build.cmake-prefix-path "$workspace/externals/${{ env.VCPKG_TARGET_TRIPLET }}" `
+            --pkg-config-path "${{ github.workspace }}/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}/debug/lib/pkgconfig" `
+            --build.pkg-config-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}/debug/lib/pkgconfig" `
+            --cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}" `
+            --build.cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}" `
             "build-x64-windows"
         shell: pwsh
 
       - uses: actions/upload-artifact@v4.3.1
+        if: steps.meson-setup.outcome == 'failure'
         with:
           name: meson-logs
           path: build-x64-windows/meson-logs/
+        # continue-on-error: true
