@@ -1,0 +1,2 @@
+option('target_triplet', type:'string', value:'x64-windows', description:'Target triplet for vcpkg toolchain')
+option('host_triplet', type:'string', value:'x64-windows', description:'Host triplet for vcpkg toolchain')

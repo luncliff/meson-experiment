@@ -34,15 +34,20 @@ if build_machine.system() == 'windows'
 endif
 
 root = meson.current_source_dir()
-externals = root / 'externals/x64-windows'
+triplet = get_option('target_triplet')
+message('Using target_triplet: ', triplet)
+
+# https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
+externals = root / 'externals' / triplet
+env.prepend('PATH', externals / 'bin')
 if get_option('buildtype') == 'debug'
-  externals = root / 'externals/x64-windows/debug'
+  externals = externals / 'debug'
+  env.prepend('PATH', externals / 'bin')
 endif
-# message('Using externals: ', externals)
 
 compiler = meson.get_compiler('cpp')
 if target_machine.system() == 'windows'
-  add_global_arguments('-DNOMINMAX', language: 'cpp')
+  add_global_arguments('/DNOMINMAX', language: 'cpp')
 endif
 
 system_dependencies = [
@@ -51,7 +56,8 @@ system_dependencies = [
 ]
 
 external_dependencies = [
-  compiler.find_library('dispatch', dirs:[ externals / 'lib'], required: true),
+  compiler.find_library('dispatch', dirs: [ externals / 'lib'], required: true),
+  dependency('fmt', method: 'cmake', modules: ['fmt::fmt'], required: true),
   dependency('spdlog', method: 'cmake', modules: ['spdlog::spdlog'], required: true)
 ]
 
@@ -75,18 +81,27 @@ gtest_dep = dependency('gtest', version: '>=1.14.0', method: 'pkg-config', requi
 if gtest_dep.found() == false
   gtest_dep = dependency('GTest', method: 'cmake', modules: ['GTest::gtest'], required: true)
 endif
-test_dependencies = [
-  gtest_dep,
-  dependency('benchmark', version: '>=1.8', method: 'pkg-config', required: true)
-]
+benchmark_dep = dependency('benchmark', version: '>=1.8', method: 'pkg-config', required: true)
 
-exe1 = executable('testsuite',
+exe1 = executable('test-program',
   include_directories: join_paths('.', 'include'),
-  sources :[
+  sources: [
     public_headers,
     'test/test_main.cpp'
   ],
-  dependencies: [ system_dependencies, external_dependencies, test_dependencies ],
+  dependencies: [ system_dependencies, external_dependencies, gtest_dep ],
+  link_with: [ lib1 ],
+  install: true,
+  install_dir: get_option('bindir')
+)
+
+exe2 = executable('benchmark-program',
+  include_directories: join_paths('.', 'include'),
+  sources: [
+    public_headers,
+    'test/benchmark_main.cpp'
+  ],
+  dependencies: [ system_dependencies, external_dependencies, benchmark_dep ],
   link_with: [ lib1 ],
   install: true,
   install_dir: get_option('bindir')
@@ -94,28 +109,14 @@ exe1 = executable('testsuite',
 
 fs = import('fs')
 if target_machine.system() == 'windows'
-  required_copies = [
-    fs.copyfile(externals / 'bin/gtest.dll', install: true, install_dir: get_option('bindir')),
-    fs.copyfile(externals / 'bin/benchmark.dll', install: true, install_dir: get_option('bindir')),
-    fs.copyfile(externals / 'bin/dispatch.dll', install: true, install_dir: get_option('bindir')),
-    fs.copyfile(externals / 'bin/BlocksRuntime.dll', install: true, install_dir: get_option('bindir')),
-    fs.copyfile(externals / 'bin/OpenCL.dll', install: true, install_dir: get_option('bindir')),
-    fs.copyfile(externals / 'bin/vulkan-1.dll', install: true, install_dir: get_option('bindir'))
-  ]
-  if get_option('buildtype') == 'debug'
-    required_debug_copies = [
-      fs.copyfile(externals / 'bin/fmtd.dll', install: true, install_dir: get_option('bindir')),
-      fs.copyfile(externals / 'bin/spdlogd.dll', install: true, install_dir: get_option('bindir'))
-    ]
-  else
-    required_debug_copies = []
-  endif
-
   test('test-1', exe1,
     args: [ '--gtest_output=test-1.xml' ],
-    env: env,
-    depends: required_copies + required_debug_copies,
+    # env: env, # customized PATH
     protocol: 'gtest',
+  )
+  benchmark('benchmark-1', exe2,
+    args: [ '--benchmark_out=benchmark-1.json', '--benchmark_out_format=json' ],
+    timeout: 40
   )
 endif
 
