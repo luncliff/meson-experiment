@@ -4,6 +4,9 @@ on: [push, pull_request, workflow_dispatch]
 
 permissions:
   contents: write
+  deployments: write
+  checks: write
+  pull-requests: write
 
 jobs:
   build:
@@ -20,7 +23,6 @@ jobs:
           python-version: "3.12"
       - name: "Install python packages"
         run: python -m pip install -r requirements.txt
-        shell: pwsh
 
       - uses: humbletim/install-vulkan-sdk@v1.1.1
         with:
@@ -46,7 +48,6 @@ jobs:
         run: |
           New-Item -Type Directory -Force -Path "${{ runner.temp }}/vcpkg-caches"
           New-Item -Type Directory -Force -Path "${{ runner.temp }}/vcpkg-downloads"
-        shell: pwsh
 
       - uses: lukka/run-vcpkg@v11.5
         id: vcpkg
@@ -79,7 +80,6 @@ jobs:
             --cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}" `
             --build.cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}" `
             "build-x64-windows"
-        shell: pwsh
 
       - uses: actions/upload-artifact@v4.3.1
         if: steps.meson-setup.outcome == 'failure'
@@ -87,3 +87,40 @@ jobs:
           name: meson-logs
           path: build-x64-windows/meson-logs/
         # continue-on-error: true
+
+      - name: "Run MSBuild"
+        run: |
+          MSBuild experiment.sln `
+            /p:Configuration=Debug /p:Platform=x64
+        working-directory: build-x64-windows
+
+      - name: "Run meson(test)"
+        id: meson-test
+        run: |
+          meson test -C "build-x64-windows"
+
+      - uses: EnricoMi/publish-unit-test-result-action/windows@v2
+        if: always()
+        with:
+          files: |
+            build-x64-windows\test-*.xml
+
+      - name: "Run meson(benchmark)"
+        id: meson-benchmark
+        run: |
+          meson test -C "build-x64-windows" --benchmark
+
+      - uses: benchmark-action/github-action-benchmark@v1.20.1
+        if: steps.meson-benchmark.outcome == 'success'
+        with:
+          tool: 'googlecpp'
+          output-file-path: build-x64-windows/benchmark-results.json
+          auto-push: false
+          fail-on-alert: false
+          summary-always: true
+
+      - uses: actions/upload-artifact@v4.3.1
+        if: always()
+        with:
+          name: meson-logs
+          path: build-x64-windows/meson-logs/
