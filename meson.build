@@ -4,8 +4,9 @@
 #
 # meson setup --backend vs2022 --vsenv `
 #   --prefix "$workspace/install" `
+#   --buildtype debug `
 #   --pkg-config-path "$workspace/externals/x64-windows/debug/lib/pkgconfig" `
-#   --buildtype debug --build.pkg-config-path "$workspace/externals/x64-windows/debug/lib/pkgconfig" `
+#   --build.pkg-config-path "$workspace/externals/x64-windows/debug/lib/pkgconfig" `
 #   --cmake-prefix-path "$workspace/externals/x64-windows" `
 #   --build.cmake-prefix-path "$workspace/externals/x64-windows" `
 #   "build-x64-windows"
@@ -52,24 +53,25 @@ endif
 
 system_dependencies = [
   compiler.find_library('kernel32', required: true),
-  dependency('vulkan', version: '>=1.3.250', method: 'auto', required: true)
+  dependency('vulkan', version: '>=1.3.0', method: 'auto', required: true)
 ]
 
 external_dependencies = [
   compiler.find_library('dispatch', dirs: [ externals / 'lib'], required: true),
   dependency('fmt', method: 'cmake', modules: ['fmt::fmt'], required: true),
-  dependency('spdlog', method: 'cmake', modules: ['spdlog::spdlog'], required: true)
+  dependency('spdlog', method: 'cmake', modules: ['spdlog::spdlog'], required: true),
+  dependency('OpenCL', method: 'cmake', modules: ['OpenCL::OpenCL'], required: true)
 ]
 
 public_headers = [
-  'include/sample.hpp'
+  'include/experiment.hpp'
 ]
 
 lib1 = shared_library('experiment',
   include_directories: join_paths('.', 'include'),
   sources:  [
     public_headers,
-    'src/loader.cpp'
+    'src/experiment.cpp'
   ],
   dependencies: [ system_dependencies, external_dependencies ],
   cpp_args: [ '/D_INTERFACE_=__declspec(dllexport)' ],

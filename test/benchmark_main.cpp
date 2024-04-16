@@ -3,7 +3,8 @@
 
 #include <chrono>
 #include <thread>
-#include <winrt/windows.foundation.h>
+
+#include <experiment.hpp>
 
 using namespace std::chrono_literals;
 
@@ -18,8 +19,10 @@ struct NoopFixture : public benchmark::Fixture {
 
 BENCHMARK_F(NoopFixture, Noop)(benchmark::State &state) {
     // state.SkipWithError("noop");
-    for (auto _ : state)
+    for (auto _ : state) {
+        experiment::get_build_version();
         std::this_thread::sleep_for(2s);
+    }
 }
 
 int main(int argc, char *argv[]) {

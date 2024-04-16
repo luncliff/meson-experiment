@@ -9,6 +9,7 @@
 #if !defined(_INTERFACE_)
 #define _INTERFACE_
 #endif
+
 namespace experiment {
 
 _INTERFACE_ uint32_t get_build_version();
