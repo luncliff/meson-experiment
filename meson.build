@@ -40,11 +40,10 @@ message('Using target_triplet: ', triplet)
 
 # https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
 externals = root / 'externals' / triplet
-env.prepend('PATH', externals / 'bin')
 if get_option('buildtype') == 'debug'
   externals = externals / 'debug'
-  env.prepend('PATH', externals / 'bin')
 endif
+env.prepend('PATH', externals / 'bin')
 
 compiler = meson.get_compiler('cpp')
 if target_machine.system() == 'windows'
