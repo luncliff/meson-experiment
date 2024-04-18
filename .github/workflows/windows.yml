@@ -96,6 +96,7 @@ jobs:
       - name: "Run meson(test)"
         id: meson-test
         run: |
+          meson compile -C "build-x64-windows" cmake_copy_external_bins
           meson test -C "build-x64-windows" --verbose
 
       - uses: EnricoMi/publish-unit-test-result-action/windows@v2

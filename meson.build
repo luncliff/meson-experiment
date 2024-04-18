@@ -32,6 +32,7 @@ env = environment()
 if build_machine.system() == 'windows'
   vcpkg = find_program('vcpkg.exe', required: false)
   # env.prepend('VCPKG_ROOT', ...)
+  cmake = find_program('cmake', required: true)
 endif
 
 root = meson.current_source_dir()
@@ -39,7 +40,13 @@ triplet = get_option('target_triplet')
 message('Using target_triplet:', triplet)
 
 externals = root / 'externals' / triplet
+if get_option('buildtype') == 'debug'
+  externals = externals / 'debug'
+endif
 message('Using externals:', externals)
+
+# meson compile -C "..." cmake_copy_external_bins
+run_target('cmake_copy_external_bins', command: [cmake, '-E', 'copy_directory', externals / 'bin', meson.current_build_dir()])
 
 compiler = meson.get_compiler('cpp')
 if target_machine.system() == 'windows'
@@ -109,7 +116,7 @@ if target_machine.system() == 'windows'
   test('test-1', exe1,
     args: [ '--gtest_output=test-1.xml' ],
     # env: env, # customized PATH # https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
-    protocol: 'gtest',
+    protocol: 'gtest'
   )
   benchmark('benchmark-1', exe2,
     args: [ '--benchmark_out=benchmark-results.json', '--benchmark_out_format=json' ],
