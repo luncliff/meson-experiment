@@ -2,14 +2,17 @@ name: "Windows"
 
 on: [push, pull_request, workflow_dispatch]
 
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref_name }}"
+  cancel-in-progress: true
+
 permissions:
-  contents: write
-  deployments: write
   checks: write
   pull-requests: write
 
 jobs:
   build:
+    name: "Build"
     runs-on: windows-latest
     env:
       VCPKG_TARGET_TRIPLET: x64-windows
@@ -104,6 +107,7 @@ jobs:
         with:
           files: |
             build-x64-windows\test-*.xml
+          check_name: "${{ github.workflow }}/PR-${{ github.event.pull_request.number }}"
 
       # - name: "Run meson(benchmark)"
       #   id: meson-benchmark
