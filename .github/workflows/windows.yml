@@ -99,7 +99,7 @@ jobs:
           meson test -C "build-x64-windows" --verbose
 
       - uses: EnricoMi/publish-unit-test-result-action/windows@v2
-        if: always()
+        if: ${{ github.event_name == 'pull_request' }}
         with:
           files: |
             build-x64-windows\test-*.xml
