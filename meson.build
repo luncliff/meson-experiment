@@ -36,14 +36,10 @@ endif
 
 root = meson.current_source_dir()
 triplet = get_option('target_triplet')
-message('Using target_triplet: ', triplet)
+message('Using target_triplet:', triplet)
 
-# https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
 externals = root / 'externals' / triplet
-if get_option('buildtype') == 'debug'
-  externals = externals / 'debug'
-endif
-env.prepend('PATH', externals / 'bin')
+message('Using externals:', externals)
 
 compiler = meson.get_compiler('cpp')
 if target_machine.system() == 'windows'
@@ -112,7 +108,7 @@ fs = import('fs')
 if target_machine.system() == 'windows'
   test('test-1', exe1,
     args: [ '--gtest_output=test-1.xml' ],
-    # env: env, # customized PATH
+    # env: env, # customized PATH # https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
     protocol: 'gtest',
   )
   benchmark('benchmark-1', exe2,
