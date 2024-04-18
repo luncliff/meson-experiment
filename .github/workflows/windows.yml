@@ -88,18 +88,15 @@ jobs:
           path: build-x64-windows/meson-logs/
         # continue-on-error: true
 
-      - name: "Run MSBuild"
+      - name: "Run meson(build/install)"
         run: |
-          MSBuild experiment.sln `
-            /p:VcpkgEnableManifest=false `
-            /p:Configuration=Debug /p:Platform=x64
-        working-directory: build-x64-windows
+          meson compile -C "build-x64-windows"
+          meson install -C "build-x64-windows"
 
       - name: "Run meson(test)"
         id: meson-test
         run: |
-          meson compile -C "build-x64-windows"
-          meson test -C "build-x64-windows"
+          meson test -C "build-x64-windows" --verbose
 
       - uses: EnricoMi/publish-unit-test-result-action/windows@v2
         if: always()
