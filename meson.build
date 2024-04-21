@@ -55,6 +55,7 @@ endif
 
 system_dependencies = [
   compiler.find_library('kernel32', required: true),
+  compiler.find_library('WindowsApp', required: true),
   dependency('vulkan', version: '>=1.3.0', method: 'auto', required: true)
 ]
 
