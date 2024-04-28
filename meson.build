@@ -120,8 +120,8 @@ if target_machine.system() == 'windows'
     protocol: 'gtest'
   )
   benchmark('benchmark-1', exe2,
-    args: [ '--benchmark_out=benchmark-results.json', '--benchmark_out_format=json' ],
-    timeout: 40
+    args: [ '--benchmark_out=benchmark-results.csv', '--benchmark_out_format=csv', '--v=3' ],
+    timeout: -1
   )
 endif
 
