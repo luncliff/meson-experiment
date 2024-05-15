@@ -55,6 +55,9 @@ endif
 
 system_dependencies = [
   compiler.find_library('kernel32', required: true),
+  compiler.find_library('d3d11', required: true),
+  compiler.find_library('d3d12', required: true),
+  compiler.find_library('dxgi', required: true),
   dependency('vulkan', version: '>=1.3.0', method: 'auto', required: true)
 ]
 
@@ -91,6 +94,7 @@ exe1 = executable('test-program',
   include_directories: join_paths('.', 'include'),
   sources: [
     public_headers,
+    'test/test_vulkan.cpp',
     'test/test_main.cpp'
   ],
   dependencies: [ system_dependencies, external_dependencies, gtest_dep ],
@@ -111,7 +115,6 @@ exe2 = executable('benchmark-program',
   install_dir: get_option('bindir')
 )
 
-fs = import('fs')
 if target_machine.system() == 'windows'
   test('test-1', exe1,
     args: [ '--gtest_output=test-1.xml' ],

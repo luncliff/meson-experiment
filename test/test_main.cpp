@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <cstdio>
-#include <string_view>
+#include <spdlog/spdlog.h>
 
 #include "experiment.hpp"
 
@@ -20,6 +19,10 @@ TEST_F(NoopTest, Noop) {
 int wmain(int argc, wchar_t *argv[], [[maybe_unused]] wchar_t *envp[]) {
     winrt::init_apartment(winrt::apartment_type::multi_threaded);
     ::testing::InitGoogleTest(&argc, argv);
+
+    spdlog::set_level(spdlog::level::debug);
+    spdlog::set_pattern("%T.%e [%L] %8t %v");
+
     auto runner = ::testing::UnitTest::GetInstance();
     return runner->Run();
 }
