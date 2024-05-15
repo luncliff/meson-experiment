@@ -77,7 +77,8 @@ struct VulkanTest : public VulkanDynamicTest {
   private:
     void SetupInstance() {
         std::vector<const char *> layers{"VK_LAYER_KHRONOS_synchronization2"};
-        std::vector<const char *> extensions{VK_KHR_SURFACE_EXTENSION_NAME};
+        std::vector<const char *> extensions{VK_KHR_SURFACE_EXTENSION_NAME,
+                                             VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME};
 #if defined(_DEBUG)
         layers.emplace_back("VK_LAYER_KHRONOS_validation");
 #endif
@@ -120,6 +121,27 @@ struct VulkanTest : public VulkanDynamicTest {
         ASSERT_NE(queues[1].queueCount, 0);
         ASSERT_EQ(queues[2].queueCount, 1);
     }
+
+    vk::Device MakeDefaultDevice(vk::PhysicalDeviceMemoryProperties &props) {
+        auto devices = instance.enumeratePhysicalDevices(dynamic);
+        for (vk::PhysicalDevice p : devices) {
+            std::array<vk::DeviceQueueCreateInfo, 3> queues{};
+            SetupQueueCreateInfos(p, queues);
+
+            vk::DeviceCreateInfo info{};
+            info.setQueueCreateInfos(queues);
+            std::initializer_list<const char *> required{
+                VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,          //
+                VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,    // ...
+                VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,     //
+                VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME //
+            };
+            info.setPEnabledExtensionNames(required);
+            props = p.getMemoryProperties(dynamic);
+            return p.createDevice(info, nullptr, dynamic);
+        }
+        return nullptr;
+    }
 };
 
 TEST_F(VulkanTest, enum_physical_devices) {
@@ -131,6 +153,13 @@ TEST_F(VulkanTest, enum_physical_devices) {
 
         vk::DeviceCreateInfo info{};
         info.setQueueCreateInfos(queues);
+        std::initializer_list<const char *> required{
+            VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,          //
+            VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,    // ...
+            VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,     //
+            VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME //
+        };
+        info.setPEnabledExtensionNames(required);
 
         vk::Device device = p.createDevice(info, nullptr, dynamic);
         ASSERT_TRUE(device);
@@ -187,18 +216,18 @@ struct SwapChainCreationTest : public testing::Test {
 };
 
 TEST_F(SwapChainCreationTest, d3d12_device_hwnd_invalid) {
-    winrt::com_ptr<ID3D12Device> d12_device = nullptr;
+    winrt::com_ptr<ID3D12Device> d3d12_device = nullptr;
     ASSERT_EQ(D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0, //
-                                __uuidof(ID3D12Device), d12_device.put_void()),
+                                __uuidof(ID3D12Device), d3d12_device.put_void()),
               S_OK);
-    ASSERT_TRUE(d12_device);
+    ASSERT_TRUE(d3d12_device);
 
     winrt::com_ptr<ID3D12CommandQueue> queue = nullptr;
     {
         D3D12_COMMAND_QUEUE_DESC desc{};
         desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-        ASSERT_EQ(d12_device->CreateCommandQueue(&desc, __uuidof(ID3D12CommandQueue), queue.put_void()), S_OK);
+        ASSERT_EQ(d3d12_device->CreateCommandQueue(&desc, __uuidof(ID3D12CommandQueue), queue.put_void()), S_OK);
     }
 
     winrt::com_ptr<IDXGISwapChain> swapchain = nullptr;
@@ -209,6 +238,37 @@ TEST_F(SwapChainCreationTest, d3d12_device_hwnd_invalid) {
         desc.OutputWindow = NULL;
         auto hr = factory->CreateSwapChain(queue.get(), &desc, swapchain.put());
         EXPECT_NE(hr, S_OK) << winrt::to_string(winrt::hresult_error{hr}.message());
+    }
+}
+
+TEST_F(SwapChainCreationTest, d3d12_device) {
+    winrt::com_ptr<ID3D12Device> d3d12_device = nullptr;
+    ASSERT_EQ(D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0, //
+                                __uuidof(ID3D12Device), d3d12_device.put_void()),
+              S_OK);
+    ASSERT_TRUE(d3d12_device);
+
+    winrt::com_ptr<ID3D12CommandQueue> d3d12_queue = nullptr;
+    {
+        D3D12_COMMAND_QUEUE_DESC desc{};
+        desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+        ASSERT_EQ(d3d12_device->CreateCommandQueue(&desc, __uuidof(ID3D12CommandQueue), d3d12_queue.put_void()), S_OK);
+    }
+
+    winrt::com_ptr<IDXGISwapChain1> swapchain = nullptr;
+    {
+        DXGI_SWAP_CHAIN_DESC1 desc{};
+        desc.Width = desc.Height = 256;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferCount = 2;
+        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+        if (auto hr = factory->CreateSwapChainForComposition(d3d12_queue.get(), &desc, nullptr, swapchain.put());
+            FAILED(hr))
+            GTEST_FAIL() << winrt::to_string(winrt::hresult_error{hr}.message());
     }
 }
 
@@ -247,12 +307,17 @@ TEST_F(SwapChainCreationTest, d3d11_device) {
 }
 
 struct VulkanSwapChainTest : public VulkanTest {
-    winrt::com_ptr<ID3D11Device> d3d11_device = nullptr;
-    winrt::com_ptr<ID3D11DeviceContext> d3d11_device_context = nullptr;
+    vk::Device device = nullptr;
+    vk::PhysicalDeviceMemoryProperties pmemory{};
+    winrt::com_ptr<ID3D12Device> d3d12_device = nullptr;
+    winrt::com_ptr<ID3D12CommandQueue> d3d12_queue = nullptr;
     winrt::com_ptr<IDXGISwapChain1> swapchain = nullptr;
+    winrt::com_ptr<IDXGISwapChain4> swapchain4 = nullptr;
 
     void SetUp() {
         VulkanTest::SetUp();
+        device = MakeDefaultDevice(pmemory);
+        ASSERT_TRUE(device);
 
         winrt::com_ptr<IDXGIFactory4> factory = nullptr;
         if (auto hr = CreateDXGIFactory2(0, __uuidof(IDXGIFactory4), factory.put_void()); FAILED(hr))
@@ -262,20 +327,17 @@ struct VulkanSwapChainTest : public VulkanTest {
         ASSERT_NO_THROW(GetHardwareAdapter(factory.get(), adapter.put()));
         ASSERT_TRUE(adapter);
 
-        d3d11_device = nullptr;
-        d3d11_device_context = nullptr;
+        ASSERT_EQ(D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0, //
+                                    __uuidof(ID3D12Device), d3d12_device.put_void()),
+                  S_OK);
+        ASSERT_TRUE(d3d12_device);
+
         {
-            UINT flags = 0;
-#if defined(_DEBUG)
-            flags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-            D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
-            D3D_FEATURE_LEVEL levels[]{D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
-            if (auto hr = D3D11CreateDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, flags, //
-                                            levels, 3, D3D11_SDK_VERSION,                           //
-                                            d3d11_device.put(), &level, d3d11_device_context.put());
-                FAILED(hr))
-                GTEST_FAIL() << winrt::to_string(winrt::hresult_error{hr}.message());
+            D3D12_COMMAND_QUEUE_DESC desc{};
+            desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+            desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+            ASSERT_EQ(d3d12_device->CreateCommandQueue(&desc, __uuidof(ID3D12CommandQueue), d3d12_queue.put_void()),
+                      S_OK);
         }
 
         swapchain = nullptr;
@@ -288,21 +350,115 @@ struct VulkanSwapChainTest : public VulkanTest {
             desc.BufferCount = 2;
             desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
             desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-            if (auto hr = factory->CreateSwapChainForComposition(d3d11_device.get(), &desc, nullptr, swapchain.put());
+            if (auto hr = factory->CreateSwapChainForComposition(d3d12_queue.get(), &desc, nullptr, swapchain.put());
                 FAILED(hr))
                 GTEST_FAIL() << winrt::to_string(winrt::hresult_error{hr}.message());
         }
         ASSERT_TRUE(swapchain);
+        ASSERT_EQ(swapchain->QueryInterface(swapchain4.put()), S_OK);
     }
 
     void TearDown() {
+        swapchain4 = nullptr;
         swapchain = nullptr;
-        d3d11_device_context = nullptr;
-        d3d11_device = nullptr;
+        d3d12_queue = nullptr;
+        d3d12_device = nullptr;
+        if (device)
+            device.destroy(nullptr, dynamic);
         VulkanTest::TearDown();
     }
 };
 
-TEST_F(VulkanSwapChainTest, shared_handle) {
-    // ...
+TEST_F(VulkanSwapChainTest, d3d12_shared_handle) {
+    try {
+        size_t count = 0;
+        {
+            DXGI_SWAP_CHAIN_DESC1 desc{};
+            ASSERT_EQ(swapchain4->GetDesc1(&desc), S_OK);
+            count = desc.BufferCount;
+        }
+        ASSERT_NE(count, 0);
+
+        std::vector<HANDLE> sharings(count);
+        std::vector<vk::Image> images(count);
+        std::vector<vk::DeviceMemory> memories(count);
+        for (auto i = 0u; i < count; ++i) {
+            winrt::com_ptr<ID3D12Resource> buffer = nullptr;
+            ASSERT_EQ(swapchain4->GetBuffer(i, __uuidof(ID3D12Resource), buffer.put_void()), S_OK);
+
+            {
+                D3D12_RESOURCE_DESC desc = buffer->GetDesc();
+                vk::ExternalMemoryImageCreateInfo info1{};
+                info1.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource;
+                vk::ImageCreateInfo info2{};
+                info2.setPNext(&info1); // D3D12Resource
+                info2.setImageType(vk::ImageType::e2D);
+                info2.setMipLevels(1);
+                info2.setArrayLayers(1);
+                info2.setSamples(vk::SampleCountFlagBits::e1); // VK_SAMPLE_COUNT_1_BIT?
+                info2.setFormat(vk::Format::eR8G8B8A8Unorm);
+                info2.setExtent({static_cast<uint32_t>(desc.Width), static_cast<uint32_t>(desc.Height), 1});
+                info2.setTiling(vk::ImageTiling::eOptimal);
+                info2.setUsage(vk::ImageUsageFlagBits::eColorAttachment);
+                info2.setSharingMode(vk::SharingMode::eExclusive);
+                info2.setInitialLayout(vk::ImageLayout::eUndefined);
+                images[i] = device.createImage(info2, nullptr, dynamic);
+                ASSERT_TRUE(images[i]);
+            }
+
+            if (auto hr = d3d12_device->CreateSharedHandle(buffer.get(), nullptr, GENERIC_ALL, nullptr, &sharings[i]);
+                FAILED(hr))
+                throw winrt::hresult_error{hr};
+
+            vk::MemoryWin32HandlePropertiesKHR ext{};
+            ASSERT_EQ(device.getMemoryWin32HandlePropertiesKHR(vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource,
+                                                               sharings[i], &ext, dynamic),
+                      vk::Result::eSuccess);
+
+            vk::MemoryRequirements reqs = device.getImageMemoryRequirements(images[i], dynamic);
+            if (ext.memoryTypeBits == 0)
+                ext.memoryTypeBits = reqs.memoryTypeBits;
+
+            uint32_t index = UINT32_MAX;
+            for (uint32_t i = 0; i < pmemory.memoryTypeCount; ++i) {
+                const uint32_t bit = 0b0001 << i;
+                if (ext.memoryTypeBits != bit)
+                    continue;
+                if (pmemory.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)
+                    index = i;
+                if (index != UINT32_MAX)
+                    break;
+            }
+            ASSERT_NE(index, UINT32_MAX);
+
+            {
+                vk::MemoryDedicatedAllocateInfo info1{};
+                info1.setImage(images[i]);
+
+                vk::ImportMemoryWin32HandleInfoKHR info2{};
+                info2.setPNext(&info1);
+                info2.setHandle(sharings[i]);
+                info2.setHandleType(vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource);
+
+                vk::MemoryAllocateInfo info{};
+                info.setPNext(&info2);
+                info.setAllocationSize(reqs.size);
+                info.setMemoryTypeIndex(index);
+                memories[i] = device.allocateMemory(info, nullptr, dynamic);
+                ASSERT_TRUE(memories[i]);
+            }
+            device.bindImageMemory(images[i], memories[i], 0, dynamic);
+        }
+
+        // cleanup
+        for (auto i = 0u; i < count; ++i) {
+            device.freeMemory(memories[i], nullptr, dynamic);
+            device.destroyImage(images[i], nullptr, dynamic);
+            CloseHandle(sharings[i]);
+        }
+    } catch (const vk::SystemError &e) {
+        GTEST_FAIL() << e.what();
+    } catch (const winrt::hresult_error &ex) {
+        GTEST_FAIL() << winrt::to_string(ex.message());
+    }
 }
