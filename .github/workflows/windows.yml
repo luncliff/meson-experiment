@@ -14,8 +14,6 @@ jobs:
   build:
     name: "Build"
     runs-on: windows-latest
-    env:
-      VCPKG_TARGET_TRIPLET: x64-windows
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +61,7 @@ jobs:
           VCPKG_INSTALL_DIR: "${{ github.workspace }}/externals"
           VCPKG_DEFAULT_BINARY_CACHE: "${{ runner.temp }}/vcpkg-caches"
           VCPKG_DOWNLOADS: "${{ runner.temp }}/vcpkg-downloads"
+          VCPKG_TARGET_TRIPLET: x64-windows
 
       - uses: actions/cache/save@v4
         if: steps.vcpkg.outcome == 'success'
@@ -78,11 +77,13 @@ jobs:
           meson setup --backend vs2022 --vsenv `
             --prefix "${{ github.workspace }}/install" `
             --buildtype debug `
-            --pkg-config-path "${{ github.workspace }}/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}/lib/pkgconfig" `
+            --pkg-config-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}/lib/pkgconfig" `
             --build.pkg-config-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}/lib/pkgconfig" `
-            --cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_DEFAULT_TRIPLET }}" `
+            --cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}" `
             --build.cmake-prefix-path "${{ github.workspace }}/externals/${{ env.VCPKG_TARGET_TRIPLET }}" `
             "build-x64-windows"
+        env:
+          VCPKG_TARGET_TRIPLET: x64-windows
 
       - uses: actions/upload-artifact@v4.3.1
         if: steps.meson-setup.outcome == 'failure'

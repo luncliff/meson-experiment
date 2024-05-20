@@ -1,9 +1,15 @@
+/**
+ * @see https://registry.khronos.org/vulkan/specs/1.3-extensions/html/
+ * @see https://microsoft.github.io/DirectX-Specs/d3d/VulkanOn12.html
+ * @see https://microsoft.github.io/DirectX-Specs/
+ */
 #include <gtest/gtest.h>
 
 #include <array>
 #include <d3d11on12.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <set>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
@@ -15,7 +21,7 @@
 
 struct VulkanDynamicTest : public testing::Test {
     vk::DynamicLoader loader{"vulkan-1.dll"};
-    vk::DispatchLoaderDynamic dynamic;
+    vk::DispatchLoaderDynamic dynamic{};
 
     void SetUp() {
         ASSERT_TRUE(loader.success());
@@ -24,67 +30,106 @@ struct VulkanDynamicTest : public testing::Test {
 };
 
 TEST_F(VulkanDynamicTest, enum_instance_layer_extensions) {
-    auto layers = vk::enumerateInstanceLayerProperties(dynamic);
-    ASSERT_FALSE(layers.empty());
+    std::set<std::string> names{};
 
+    auto extensions = vk::enumerateInstanceExtensionProperties(nullptr, dynamic);
+    if (extensions.empty())
+        GTEST_SKIP() << "enumerateInstanceExtensionProperties";
+
+    for (const vk::ExtensionProperties &ep : extensions) {
+        std::string ename{ep.extensionName.data(), strnlen(ep.extensionName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
+        ASSERT_FALSE(ename.empty());
+        if (names.contains(ename) == false)
+            names.insert(std::move(ename));
+    }
+
+    auto layers = vk::enumerateInstanceLayerProperties(dynamic);
     for (const vk::LayerProperties &lp : layers) {
         std::string name{lp.layerName.data(), strnlen(lp.layerName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
         ASSERT_FALSE(name.empty());
 
         auto extensions = vk::enumerateInstanceExtensionProperties(name, dynamic);
         for (const vk::ExtensionProperties &ep : extensions) {
-            std::string_view ename{ep.extensionName.data(),
-                                   strnlen(ep.extensionName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
+            std::string ename{ep.extensionName.data(), strnlen(ep.extensionName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
             ASSERT_FALSE(ename.empty());
+            if (names.contains(ename) == false)
+                names.insert(std::move(ename));
         }
     }
+    ASSERT_FALSE(names.empty());
 }
 
 TEST_F(VulkanDynamicTest, create_instance) {
     ASSERT_EQ(dynamic.vkDestroyInstance, nullptr);
-    std::vector<const char *> layers{"VK_LAYER_KHRONOS_synchronization2"};
-    std::vector<const char *> extensions{VK_KHR_SURFACE_EXTENSION_NAME};
-#if defined(_DEBUG)
-    layers.emplace_back("VK_LAYER_KHRONOS_validation");
-#endif
+    std::vector<const char *> layer_names{};
+    std::vector<const char *> extension_names{VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME};
+
+    vk::ApplicationInfo app{};
+    app.setApiVersion(VK_API_VERSION_1_3);
+    app.setApplicationVersion(VK_MAKE_VERSION(0, 1, 0));
 
     vk::InstanceCreateInfo info{};
-    info.setPEnabledLayerNames(layers);
-    info.setPEnabledExtensionNames(extensions);
+    info.setPApplicationInfo(&app);
+    info.setPEnabledLayerNames(layer_names);
+    info.setPEnabledExtensionNames(extension_names);
+    info.setFlags(vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR);
 
-    vk::Instance instance = vk::createInstance(info, nullptr, dynamic);
-    ASSERT_TRUE(instance);
+    try {
+        vk::Instance instance = vk::createInstance(info, nullptr, dynamic);
+        ASSERT_TRUE(instance);
 
-    // reinit to update function pointers
-    dynamic.init(instance);
-    ASSERT_NE(dynamic.vkDestroyInstance, nullptr);
-    instance.destroy(nullptr, dynamic);
+        // reinit to update function pointers
+        dynamic.init(instance);
+        ASSERT_NE(dynamic.vkDestroyInstance, nullptr);
+        instance.destroy(nullptr, dynamic);
+    } catch (const vk::SystemError &e) {
+        if (e.code().value() == VK_ERROR_INCOMPATIBLE_DRIVER)
+            GTEST_SKIP() << e.what();
+        else
+            GTEST_FAIL() << e.what();
+    }
 }
 
 struct VulkanTest : public VulkanDynamicTest {
     vk::Instance instance{nullptr};
+    vk::PhysicalDevice pdevice = nullptr;
 
     void SetUp() {
         VulkanDynamicTest::SetUp();
-        SetupInstance();
-        dynamic.init(instance);
+        try {
+            SetupInstance();
+            dynamic.init(instance);
+        } catch (const vk::SystemError &ex) {
+            // case: Incompatible Vulkan Driver
+            GTEST_SKIP() << ex.what();
+        }
     }
     void TearDown() {
-        ASSERT_NE(dynamic.vkDestroyInstance, nullptr);
-        instance.destroy(nullptr, dynamic);
+        if (dynamic.vkDestroyInstance)
+            instance.destroy(nullptr, dynamic);
+        VulkanDynamicTest::TearDown();
     }
 
   private:
-    void SetupInstance() {
-        std::vector<const char *> layers{"VK_LAYER_KHRONOS_synchronization2"};
-        std::vector<const char *> extensions{VK_KHR_SURFACE_EXTENSION_NAME,
-                                             VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME};
-#if defined(_DEBUG)
-        layers.emplace_back("VK_LAYER_KHRONOS_validation");
+    void SetupInstance() noexcept(false) {
+        std::vector<const char *> layer_names{};
+        std::vector<const char *> extension_names{VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+                                                  VK_KHR_SURFACE_EXTENSION_NAME,
+                                                  VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME};
+#if 0 // defined(_DEBUG)
+        layer_names.emplace_back("VK_LAYER_KHRONOS_validation");
 #endif
+
+        vk::ApplicationInfo app{};
+        app.setApiVersion(VK_API_VERSION_1_3);
+        app.setApplicationVersion(VK_MAKE_VERSION(0, 1, 0));
+
         vk::InstanceCreateInfo info{};
-        info.setPEnabledLayerNames(layers);
-        info.setPEnabledExtensionNames(extensions);
+        info.setPApplicationInfo(&app);
+        info.setPEnabledLayerNames(layer_names);
+        info.setPEnabledExtensionNames(extension_names);
+        info.setFlags(vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR);
+
         instance = vk::createInstance(info, nullptr, dynamic);
         ASSERT_TRUE(instance);
     }
@@ -122,7 +167,7 @@ struct VulkanTest : public VulkanDynamicTest {
         ASSERT_EQ(queues[2].queueCount, 1);
     }
 
-    vk::Device MakeDefaultDevice(vk::PhysicalDeviceMemoryProperties &props) {
+    vk::Device MakeDefaultDevice() {
         auto devices = instance.enumeratePhysicalDevices(dynamic);
         for (vk::PhysicalDevice p : devices) {
             std::array<vk::DeviceQueueCreateInfo, 3> queues{};
@@ -130,17 +175,32 @@ struct VulkanTest : public VulkanDynamicTest {
 
             vk::DeviceCreateInfo info{};
             info.setQueueCreateInfos(queues);
-            std::initializer_list<const char *> required{
+            std::initializer_list<const char *> extension_names{
                 VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,          //
                 VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,    // ...
                 VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,     //
                 VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME //
             };
-            info.setPEnabledExtensionNames(required);
-            props = p.getMemoryProperties(dynamic);
+            info.setPEnabledExtensionNames(extension_names);
+            pdevice = p;
             return p.createDevice(info, nullptr, dynamic);
         }
         return nullptr;
+    }
+
+    uint32_t FindPropertyIndex(const VkPhysicalDeviceMemoryProperties &physical, uint32_t requirement,
+                               vk::MemoryPropertyFlagBits flags) noexcept(false) {
+        for (uint32_t index = 0; index < physical.memoryTypeCount; ++index) {
+            const uint32_t type_bits = (1 << index);
+            bool required_type = requirement & type_bits;
+
+            vk::MemoryPropertyFlagBits props{physical.memoryTypes[index].propertyFlags};
+            bool required_props = (props & flags) == flags;
+
+            if (required_type && required_props)
+                return index;
+        }
+        throw std::runtime_error{"device memory property not found"};
     }
 };
 
@@ -153,13 +213,13 @@ TEST_F(VulkanTest, enum_physical_devices) {
 
         vk::DeviceCreateInfo info{};
         info.setQueueCreateInfos(queues);
-        std::initializer_list<const char *> required{
+        std::initializer_list<const char *> extension_names{
             VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,          //
             VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,    // ...
             VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,     //
             VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME //
         };
-        info.setPEnabledExtensionNames(required);
+        info.setPEnabledExtensionNames(extension_names);
 
         vk::Device device = p.createDevice(info, nullptr, dynamic);
         ASSERT_TRUE(device);
@@ -201,7 +261,7 @@ struct SwapChainCreationTest : public testing::Test {
 
     void SetUp() {
         UINT flags = 0;
-#if defined(_DEBUG)
+#if 0 // defined(_DEBUG) // todo: check DXGI debug DLL exists
         flags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
         if (auto hr = CreateDXGIFactory2(flags, __uuidof(IDXGIFactory4), factory.put_void()); FAILED(hr))
@@ -308,7 +368,6 @@ TEST_F(SwapChainCreationTest, d3d11_device) {
 
 struct VulkanSwapChainTest : public VulkanTest {
     vk::Device device = nullptr;
-    vk::PhysicalDeviceMemoryProperties pmemory{};
     winrt::com_ptr<ID3D12Device> d3d12_device = nullptr;
     winrt::com_ptr<ID3D12CommandQueue> d3d12_queue = nullptr;
     winrt::com_ptr<IDXGISwapChain1> swapchain = nullptr;
@@ -316,7 +375,10 @@ struct VulkanSwapChainTest : public VulkanTest {
 
     void SetUp() {
         VulkanTest::SetUp();
-        device = MakeDefaultDevice(pmemory);
+        if (instance == nullptr)
+            GTEST_SKIP();
+        device = MakeDefaultDevice();
+        ASSERT_TRUE(pdevice);
         ASSERT_TRUE(device);
 
         winrt::com_ptr<IDXGIFactory4> factory = nullptr;
@@ -387,9 +449,33 @@ TEST_F(VulkanSwapChainTest, d3d12_shared_handle) {
             ASSERT_EQ(swapchain4->GetBuffer(i, __uuidof(ID3D12Resource), buffer.put_void()), S_OK);
 
             {
+                vk::PhysicalDeviceExternalImageFormatInfo format0{};
+                format0.setHandleType(vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource);
+                vk::PhysicalDeviceImageFormatInfo2 format1{};
+                format1.setPNext(&format0);
+                format1.setFormat(vk::Format::eR8G8B8A8Unorm);
+                format1.setType(vk::ImageType::e2D);
+                format1.setTiling(vk::ImageTiling::eOptimal);
+                format1.setUsage(vk::ImageUsageFlagBits::eColorAttachment);
+
+                // check VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME
+                vk::ExternalImageFormatProperties props0{};
+                vk::ImageFormatProperties2 props1{{}, &props0};
+                auto res = pdevice.getImageFormatProperties2(&format1, &props1, dynamic);
+
+                if (!(props0.externalMemoryProperties.compatibleHandleTypes &
+                      vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource))
+                    spdlog::warn("vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource");
+
                 D3D12_RESOURCE_DESC desc = buffer->GetDesc();
+
+                // note some runtime may support only DirectX 11 interop...
                 vk::ExternalMemoryImageCreateInfo info1{};
-                info1.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource;
+                info1.handleTypes = props0.externalMemoryProperties.compatibleHandleTypes;
+                // cause validation error
+                if (res != vk::Result::eSuccess)
+                    info1.handleTypes |= vk::ExternalMemoryHandleTypeFlagBits::eD3D12Resource;
+
                 vk::ImageCreateInfo info2{};
                 info2.setPNext(&info1); // D3D12Resource
                 info2.setImageType(vk::ImageType::e2D);
@@ -419,17 +505,8 @@ TEST_F(VulkanSwapChainTest, d3d12_shared_handle) {
             if (ext.memoryTypeBits == 0)
                 ext.memoryTypeBits = reqs.memoryTypeBits;
 
-            uint32_t index = UINT32_MAX;
-            for (uint32_t i = 0; i < pmemory.memoryTypeCount; ++i) {
-                const uint32_t bit = 0b0001 << i;
-                if (ext.memoryTypeBits != bit)
-                    continue;
-                if (pmemory.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)
-                    index = i;
-                if (index != UINT32_MAX)
-                    break;
-            }
-            ASSERT_NE(index, UINT32_MAX);
+            vk::PhysicalDeviceMemoryProperties pmemory = pdevice.getMemoryProperties(dynamic);
+            uint32_t index = FindPropertyIndex(pmemory, reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
             {
                 vk::MemoryDedicatedAllocateInfo info1{};
