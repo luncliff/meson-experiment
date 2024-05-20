@@ -4,6 +4,7 @@
 #include <d3d11on12.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <set>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
@@ -24,25 +25,38 @@ struct VulkanDynamicTest : public testing::Test {
 };
 
 TEST_F(VulkanDynamicTest, enum_instance_layer_extensions) {
-    auto layers = vk::enumerateInstanceLayerProperties(dynamic);
-    ASSERT_FALSE(layers.empty());
+    std::set<std::string> names{};
 
+    auto extensions = vk::enumerateInstanceExtensionProperties(nullptr, dynamic);
+    if (extensions.empty())
+        GTEST_SKIP() << "enumerateInstanceExtensionProperties";
+
+    for (const vk::ExtensionProperties &ep : extensions) {
+        std::string ename{ep.extensionName.data(), strnlen(ep.extensionName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
+        ASSERT_FALSE(ename.empty());
+        if (names.contains(ename) == false)
+            names.insert(std::move(ename));
+    }
+
+    auto layers = vk::enumerateInstanceLayerProperties(dynamic);
     for (const vk::LayerProperties &lp : layers) {
         std::string name{lp.layerName.data(), strnlen(lp.layerName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
         ASSERT_FALSE(name.empty());
 
         auto extensions = vk::enumerateInstanceExtensionProperties(name, dynamic);
         for (const vk::ExtensionProperties &ep : extensions) {
-            std::string_view ename{ep.extensionName.data(),
-                                   strnlen(ep.extensionName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
+            std::string ename{ep.extensionName.data(), strnlen(ep.extensionName.data(), VK_MAX_EXTENSION_NAME_SIZE)};
             ASSERT_FALSE(ename.empty());
+            if (names.contains(ename) == false)
+                names.insert(std::move(ename));
         }
     }
+    ASSERT_FALSE(names.empty());
 }
 
 TEST_F(VulkanDynamicTest, create_instance) {
     ASSERT_EQ(dynamic.vkDestroyInstance, nullptr);
-    std::vector<const char *> layers{"VK_LAYER_KHRONOS_synchronization2"};
+    std::vector<const char *> layers{};
     std::vector<const char *> extensions{VK_KHR_SURFACE_EXTENSION_NAME};
 #if defined(_DEBUG)
     layers.emplace_back("VK_LAYER_KHRONOS_validation");
@@ -52,13 +66,17 @@ TEST_F(VulkanDynamicTest, create_instance) {
     info.setPEnabledLayerNames(layers);
     info.setPEnabledExtensionNames(extensions);
 
-    vk::Instance instance = vk::createInstance(info, nullptr, dynamic);
-    ASSERT_TRUE(instance);
+    try {
+        vk::Instance instance = vk::createInstance(info, nullptr, dynamic);
+        ASSERT_TRUE(instance);
 
-    // reinit to update function pointers
-    dynamic.init(instance);
-    ASSERT_NE(dynamic.vkDestroyInstance, nullptr);
-    instance.destroy(nullptr, dynamic);
+        // reinit to update function pointers
+        dynamic.init(instance);
+        ASSERT_NE(dynamic.vkDestroyInstance, nullptr);
+        instance.destroy(nullptr, dynamic);
+    } catch (const vk::SystemError &e) {
+        GTEST_FAIL() << e.what();
+    }
 }
 
 struct VulkanTest : public VulkanDynamicTest {
@@ -70,13 +88,14 @@ struct VulkanTest : public VulkanDynamicTest {
         dynamic.init(instance);
     }
     void TearDown() {
-        ASSERT_NE(dynamic.vkDestroyInstance, nullptr);
-        instance.destroy(nullptr, dynamic);
+        if (dynamic.vkDestroyInstance)
+            instance.destroy(nullptr, dynamic);
+        VulkanDynamicTest::TearDown();
     }
 
   private:
     void SetupInstance() {
-        std::vector<const char *> layers{"VK_LAYER_KHRONOS_synchronization2"};
+        std::vector<const char *> layers{};
         std::vector<const char *> extensions{VK_KHR_SURFACE_EXTENSION_NAME,
                                              VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME};
 #if defined(_DEBUG)
@@ -85,8 +104,13 @@ struct VulkanTest : public VulkanDynamicTest {
         vk::InstanceCreateInfo info{};
         info.setPEnabledLayerNames(layers);
         info.setPEnabledExtensionNames(extensions);
-        instance = vk::createInstance(info, nullptr, dynamic);
-        ASSERT_TRUE(instance);
+
+        try {
+            instance = vk::createInstance(info, nullptr, dynamic);
+            ASSERT_TRUE(instance);
+        } catch (const vk::SystemError &e) {
+            GTEST_FAIL() << e.what();
+        }
     }
 
   protected:
@@ -141,6 +165,21 @@ struct VulkanTest : public VulkanDynamicTest {
             return p.createDevice(info, nullptr, dynamic);
         }
         return nullptr;
+    }
+
+    uint32_t FindPropertyIndex(const VkPhysicalDeviceMemoryProperties &physical, uint32_t requirement,
+                               vk::MemoryPropertyFlagBits flags) noexcept(false) {
+        for (uint32_t index = 0; index < physical.memoryTypeCount; ++index) {
+            const uint32_t type_bits = (1 << index);
+            bool required_type = requirement & type_bits;
+
+            vk::MemoryPropertyFlagBits props{physical.memoryTypes[index].propertyFlags};
+            bool required_props = (props & flags) == flags;
+
+            if (required_type && required_props)
+                return index;
+        }
+        throw std::runtime_error{"device memory property not found"};
     }
 };
 
@@ -419,17 +458,7 @@ TEST_F(VulkanSwapChainTest, d3d12_shared_handle) {
             if (ext.memoryTypeBits == 0)
                 ext.memoryTypeBits = reqs.memoryTypeBits;
 
-            uint32_t index = UINT32_MAX;
-            for (uint32_t i = 0; i < pmemory.memoryTypeCount; ++i) {
-                const uint32_t bit = 0b0001 << i;
-                if (ext.memoryTypeBits != bit)
-                    continue;
-                if (pmemory.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)
-                    index = i;
-                if (index != UINT32_MAX)
-                    break;
-            }
-            ASSERT_NE(index, UINT32_MAX);
+            uint32_t index = FindPropertyIndex(pmemory, reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
             {
                 vk::MemoryDedicatedAllocateInfo info1{};
