@@ -5,21 +5,16 @@
 
 #include <chrono>
 #include <coroutine>
-#include <d3d11_4.h>
-#include <d3d12.h>
-#include <d3dcompiler.h>
-#include <dxgi1_6.h>
-#include <mfapi.h>
+#include <mutex>
+#include <spdlog/spdlog.h>
+#include <winrt/windows.foundation.h>
+
+#include "audio_renderer.hpp"
 #include <mferror.h>
-#include <mfidl.h>
 #include <mfobjects.h>
 #include <mfreadwrite.h>
 #include <mmdeviceapi.h>
-#include <mutex>
-#include <ranges>
-#include <spdlog/spdlog.h>
-#include <thread>
-#include <winrt/windows.foundation.h>
+
 #pragma comment(lib, "evr.lib")
 #pragma comment(lib, "mf.lib")
 #pragma comment(lib, "mfplat.lib")
@@ -139,27 +134,20 @@ struct MFAudioRendererTest : public testing::Test {
         if (auto hr = MFCreateAudioRendererActivate(activate.put()); FAILED(hr))
             return hr;
         activate->SetString(MF_AUDIO_RENDERER_ATTRIBUTE_ENDPOINT_ID, device_id.c_str());
-        activate->SetGUID(MF_AUDIO_RENDERER_ATTRIBUTE_SESSION_ID, GUID_NULL);
+        // activate->SetGUID(MF_AUDIO_RENDERER_ATTRIBUTE_SESSION_ID, GUID_NULL);
+        activate->SetUINT32(MF_AUDIO_RENDERER_ATTRIBUTE_FLAGS, MF_AUDIO_RENDERER_ATTRIBUTE_FLAGS_CROSSPROCESS);
         return activate->QueryInterface(output);
     }
 };
 
-TEST_F(MFAudioRendererTest, CreateRenderer) {
+TEST_F(MFAudioRendererTest, CreateMediaSink) {
     winrt::com_ptr<IMFMediaSink> sink = nullptr;
-    winrt::com_ptr<IMFAttributes> attrs = nullptr;
-    MFCreateAttributes(attrs.put(), 2);
-    ASSERT_EQ(attrs->SetString(MF_AUDIO_RENDERER_ATTRIBUTE_ENDPOINT_ID, device_id.c_str()), S_OK);
-    ASSERT_EQ(attrs->SetGUID(MF_AUDIO_RENDERER_ATTRIBUTE_SESSION_ID, GUID_NULL), S_OK);
-    ASSERT_EQ(MFCreateAudioRenderer(attrs.get(), sink.put()), S_OK);
-    ASSERT_NE(sink, nullptr);
+    ASSERT_EQ(create_renderer(sink.put()), S_OK);
 }
 
 TEST_F(MFAudioRendererTest, CreateMFActivate) {
     winrt::com_ptr<IMFActivate> activate = nullptr;
-    ASSERT_EQ(MFCreateAudioRendererActivate(activate.put()), S_OK);
-    ASSERT_EQ(activate->SetString(MF_AUDIO_RENDERER_ATTRIBUTE_ENDPOINT_ID, device_id.c_str()), S_OK);
-    ASSERT_EQ(activate->SetGUID(MF_AUDIO_RENDERER_ATTRIBUTE_SESSION_ID, GUID_NULL), S_OK);
-    // ActivateObject ...
+    ASSERT_EQ(create_renderer(activate.put()), S_OK);
 }
 
 TEST_F(MFAudioRendererTest, AudioWithReader) {
@@ -184,7 +172,7 @@ TEST_F(MFAudioRendererTest, AudioWithReader) {
 
     winrt::com_ptr<IMFStreamSink> stream_sink = nullptr;
     ASSERT_EQ(sink->GetStreamSinkByIndex(0, stream_sink.put()), S_OK);
-
+    
     winrt::com_ptr<IMFMediaTypeHandler> handler = nullptr;
     ASSERT_EQ(stream_sink->GetMediaTypeHandler(handler.put()), S_OK);
 
@@ -243,62 +231,7 @@ TEST_F(MFAudioRendererTest, AudioWithReader) {
     writer->Finalize();
 }
 
-struct TestAsyncCallback final : public IMFAsyncCallback {
-    winrt::com_ptr<IMFMediaSession> session = nullptr;
-    // winrt::com_ptr<IMFMediaEventGenerator> events = nullptr;
-    std::atomic_bool started = false;
-    std::atomic_bool ended = false;
-    std::atomic_bool closed = false;
-
-  public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) {
-        if (ppv == nullptr)
-            return E_POINTER;
-
-        if (IsEqualGUID(IID_IUnknown, riid)) {
-            *ppv = static_cast<IUnknown *>(this);
-            return S_OK;
-        }
-        if (IsEqualGUID(IID_IMFAsyncResult, riid)) {
-            *ppv = static_cast<IMFAsyncCallback *>(this);
-            return S_OK;
-        }
-        return E_NOINTERFACE;
-    }
-
-    ULONG STDMETHODCALLTYPE AddRef() { return 1; }
-
-    ULONG STDMETHODCALLTYPE Release() { return 1; }
-
-    HRESULT STDMETHODCALLTYPE GetParameters(DWORD *, DWORD *) { return E_NOTIMPL; }
-
-    HRESULT STDMETHODCALLTYPE Invoke(IMFAsyncResult *result) {
-        winrt::com_ptr<IMFMediaEvent> event = nullptr;
-        if (auto hr = session->EndGetEvent(result, event.put()); FAILED(hr))
-            return hr;
-
-        MediaEventType etype = MEUnknown;
-        event->GetType(&etype);
-        if (etype == MESessionClosed) {
-            closed = true;
-            return S_OK;
-        }
-        if (etype == MESessionStarted) {
-            started = true;
-        }
-        if (etype == MESessionEnded) {
-            ended = true;
-        }
-
-        return session->BeginGetEvent(this, nullptr);
-    }
-};
-
 TEST_F(MFAudioRendererTest, AudioWithSessionTopology) {
-    GTEST_SKIP();
-    winrt::com_ptr<IMFTopology> topology = nullptr;
-    ASSERT_EQ(MFCreateTopology(topology.put()), S_OK);
-
     winrt::com_ptr<IMFMediaSource> source = nullptr;
     {
         winrt::com_ptr<IMFSourceResolver> resolver = nullptr;
@@ -310,106 +243,21 @@ TEST_F(MFAudioRendererTest, AudioWithSessionTopology) {
         ASSERT_EQ(resolver->CreateObjectFromURL(asset, MF_RESOLUTION_MEDIASOURCE, nullptr, &type, unknown.put()), S_OK);
         ASSERT_EQ(unknown->QueryInterface(source.put()), S_OK);
     }
+    winrt::com_ptr<IMFActivate> activate = nullptr;
+    ASSERT_EQ(create_renderer(activate.put()), S_OK);
+    auto renderer = std::make_unique<mf_audio_renderer_t>();
 
-    winrt::com_ptr<IMFPresentationDescriptor> presentation = nullptr;
-    ASSERT_EQ(source->CreatePresentationDescriptor(presentation.put()), S_OK);
+    ASSERT_EQ(renderer->set_input(source.get()), S_OK);
+    ASSERT_EQ(renderer->set_output(activate.get()), S_OK);
+    ASSERT_EQ(renderer->connect(), S_OK);
 
-    winrt::com_ptr<IMFTopologyNode> input = nullptr;
-
-    DWORD stream_count = 0;
-    presentation->GetStreamDescriptorCount(&stream_count);
-    for (DWORD stream_index = 0; stream_index < stream_count; ++stream_index) {
-        BOOL selected = false;
-        winrt::com_ptr<IMFStreamDescriptor> descriptor = nullptr;
-        ASSERT_EQ(presentation->GetStreamDescriptorByIndex(stream_index, &selected, descriptor.put()), S_OK);
-        if (selected == false)
-            continue;
-
-        winrt::com_ptr<IMFMediaTypeHandler> handler = nullptr;
-        descriptor->GetMediaTypeHandler(handler.put());
-
-        GUID major{};
-        handler->GetMajorType(&major);
-        ASSERT_TRUE(IsEqualGUID(major, MFMediaType_Audio));
-
-        DWORD type_count = 0;
-        handler->GetMediaTypeCount(&type_count);
-        winrt::com_ptr<IMFMediaType> sink_type = nullptr;
-        for (DWORD type_index = 0; type_index < type_count; ++type_index) {
-            handler->GetMediaTypeByIndex(type_index, sink_type.put());
-            if (auto hr = handler->IsMediaTypeSupported(sink_type.get(), nullptr); FAILED(hr))
-                sink_type = nullptr;
-        }
-        ASSERT_NE(sink_type, nullptr);
-
-        MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, input.put());
-        input->SetUnknown(MF_TOPONODE_SOURCE, source.get());
-        input->SetUnknown(MF_TOPONODE_PRESENTATION_DESCRIPTOR, presentation.get());
-        input->SetUnknown(MF_TOPONODE_STREAM_DESCRIPTOR, descriptor.get());
-        ASSERT_EQ(topology->AddNode(input.get()), S_OK);
-    }
-
-    winrt::com_ptr<IMFActivate> renderer = nullptr;
-    ASSERT_EQ(create_renderer(renderer.put()), S_OK);
-
-    // winrt::com_ptr<IMFAudioStreamVolume> volume = nullptr;
-    // if (auto hr = MFGetService(renderer.get(), MR_POLICY_VOLUME_SERVICE, //
-    //                            __uuidof(IMFAudioStreamVolume), volume.put_void());
-    //     FAILED(hr))
-    //     ASSERT_EQ(hr, S_OK);
-
-    winrt::com_ptr<IMFTopologyNode> output = nullptr;
-    {
-        MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, output.put());
-        output->SetObject(renderer.get());
-        output->SetUINT32(MF_TOPONODE_STREAMID, 0); // use the default
-        output->SetUINT32(MF_TOPONODE_NOSHUTDOWN_ON_REMOVE, false);
-        ASSERT_EQ(topology->AddNode(output.get()), S_OK);
-    }
-
-    ASSERT_EQ(input->ConnectOutput(0, output.get(), 0), S_OK);
-
-    winrt::com_ptr<IMFMediaSession> session = nullptr;
-    ASSERT_EQ(MFCreateMediaSession(nullptr, session.put()), S_OK);
-
-    auto handler = std::make_unique<TestAsyncCallback>();
-    handler->session = session;
-    ASSERT_EQ(session->BeginGetEvent(handler.get(), nullptr), S_OK);
-
-    winrt::com_ptr<IMFSimpleAudioVolume> volume = nullptr;
-    if (SUCCEEDED(
-            MFGetService(session.get(), MR_POLICY_VOLUME_SERVICE, __uuidof(IMFSimpleAudioVolume), volume.put_void()))) {
-        volume->SetMute(false);
-        volume->SetMasterVolume(0.8f);
-    }
-
-    if (auto hr = session->SetTopology(MFSESSION_SETTOPOLOGY_CLEAR_CURRENT, topology.get()); FAILED(hr))
-        ASSERT_EQ(hr, S_OK);
-
-    {
-        PROPVARIANT vars{};
-        PropVariantInit(&vars);
-        ASSERT_EQ(session->Start(nullptr, &vars), S_OK);
-        PropVariantClear(&vars);
-    }
+    ASSERT_NO_THROW(renderer->start());
 
     MSG msg{};
-    while (GetMessageW(&msg, nullptr, 0, 0) != false) {
+    while (GetMessageW(&msg, nullptr, WM_USER, WM_USER + 16) != false) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
 
-    // while (handler->closed == false) {
-    //     // ...
-    //     // winrt::com_ptr<IMFClock> clock = nullptr;
-    //     // session->GetClock(clock.put());
-    //     SleepEx(1000, true);
-    // }
-
-    ASSERT_EQ(session->Stop(), S_OK);
-
-    session->Close();
-    source->Shutdown();
-    session->Shutdown();
-    // renderer->DetachObject();
+    ASSERT_NO_THROW(renderer->stop());
 }
