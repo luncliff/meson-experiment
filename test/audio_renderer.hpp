@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <winrt/windows.foundation.h>
@@ -13,6 +14,9 @@ class mf_audio_renderer_t final : public IMFAsyncCallback {
     winrt::com_ptr<IMFTopologyNode> output = nullptr;
 
   public:
+    std::atomic_bool loop = false;
+
+  public:
     mf_audio_renderer_t() noexcept(false);
     ~mf_audio_renderer_t() noexcept;
 
@@ -23,7 +27,6 @@ class mf_audio_renderer_t final : public IMFAsyncCallback {
     void start() noexcept(false);
     void stop() noexcept(false);
     void pause() noexcept(false);
-    void resume() noexcept(false);
 
   public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv);

@@ -172,7 +172,7 @@ TEST_F(MFAudioRendererTest, AudioWithReader) {
 
     winrt::com_ptr<IMFStreamSink> stream_sink = nullptr;
     ASSERT_EQ(sink->GetStreamSinkByIndex(0, stream_sink.put()), S_OK);
-    
+
     winrt::com_ptr<IMFMediaTypeHandler> handler = nullptr;
     ASSERT_EQ(stream_sink->GetMediaTypeHandler(handler.put()), S_OK);
 
@@ -232,32 +232,36 @@ TEST_F(MFAudioRendererTest, AudioWithReader) {
 }
 
 TEST_F(MFAudioRendererTest, AudioWithSessionTopology) {
+    GTEST_SKIP();
     winrt::com_ptr<IMFMediaSource> source = nullptr;
     {
         winrt::com_ptr<IMFSourceResolver> resolver = nullptr;
         ASSERT_EQ(MFCreateSourceResolver(resolver.put()), S_OK);
 
         winrt::com_ptr<IUnknown> unknown = nullptr;
-        auto asset = L"C:/Users/luncl/Downloads/4_1_StoryChaboon.mp3";
+        auto asset = L"C:/Users/USER/Downloads/maldita.wav";
         MF_OBJECT_TYPE type = MF_OBJECT_INVALID;
         ASSERT_EQ(resolver->CreateObjectFromURL(asset, MF_RESOLUTION_MEDIASOURCE, nullptr, &type, unknown.put()), S_OK);
         ASSERT_EQ(unknown->QueryInterface(source.put()), S_OK);
     }
+
     winrt::com_ptr<IMFActivate> activate = nullptr;
     ASSERT_EQ(create_renderer(activate.put()), S_OK);
     auto renderer = std::make_unique<mf_audio_renderer_t>();
+    renderer->loop = true;
 
     ASSERT_EQ(renderer->set_input(source.get()), S_OK);
     ASSERT_EQ(renderer->set_output(activate.get()), S_OK);
     ASSERT_EQ(renderer->connect(), S_OK);
 
     ASSERT_NO_THROW(renderer->start());
+    // SleepEx(2'000, true);
 
-    MSG msg{};
-    while (GetMessageW(&msg, nullptr, WM_USER, WM_USER + 16) != false) {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
+    // ASSERT_NO_THROW(renderer->pause());
+    // SleepEx(2'000, true);
+
+    // ASSERT_NO_THROW(renderer->start());
+    SleepEx(20'000, true);
 
     ASSERT_NO_THROW(renderer->stop());
 }

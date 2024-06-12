@@ -32,19 +32,21 @@ HRESULT mf_audio_renderer_t::Invoke(IMFAsyncResult *result) {
     MediaEventType etype = MEUnknown;
     event->GetType(&etype);
 
-    PROPVARIANT vars{};
     if (etype == MESessionClosed) {
         SetEvent(closed.get());
         return S_OK;
     }
-    if (etype == MESessionStarted) {
-        // started = true;
-        event->GetValue(&vars);
-    }
+    //if (etype == MESessionStarted) {
+    //}
+    //if (etype == MESessionPaused) {
+    //}
+    //if (etype == MESessionStopped) {
+    //}
     if (etype == MESessionEnded) {
-        // ended = true;
-        event->GetValue(&vars);
-    };
+        PROPVARIANT vars{};
+        if (loop)
+            session->Start(nullptr, &vars);
+    }
 
     return session->BeginGetEvent(this, nullptr);
 }
@@ -73,10 +75,25 @@ HRESULT mf_audio_renderer_t::set_input(IMFMediaSource *source) noexcept {
     presentation->GetStreamDescriptorCount(&stream_count);
     for (DWORD stream_index = 0; stream_index < stream_count; ++stream_index) {
         BOOL selected = false;
-        descriptor = nullptr;
-        presentation->GetStreamDescriptorByIndex(stream_index, &selected, descriptor.put());
-        if (selected)
+        winrt::com_ptr<IMFStreamDescriptor> candidate = nullptr;
+        presentation->GetStreamDescriptorByIndex(stream_index, &selected, candidate.put());
+        winrt::com_ptr<IMFMediaTypeHandler> handler = nullptr;
+        candidate->GetMediaTypeHandler(handler.put());
+
+        // found the audio stream descriptor?
+        if (descriptor != nullptr)
             break;
+
+        DWORD type_count = 0;
+        handler->GetMediaTypeCount(&type_count);
+        for (DWORD type_index = 0; type_index < type_count; ++type_index) {
+            winrt::com_ptr<IMFMediaType> type = nullptr;
+            handler->GetMediaTypeByIndex(type_index, type.put());
+            GUID major{};
+            type->GetMajorType(&major);
+            if (IsEqualGUID(major, MFMediaType_Audio))
+                descriptor = candidate;
+        }
     }
     input = nullptr;
     MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, input.put());
@@ -89,21 +106,6 @@ HRESULT mf_audio_renderer_t::set_input(IMFMediaSource *source) noexcept {
 HRESULT mf_audio_renderer_t::set_output(IMFActivate *activate) noexcept {
     if (activate == nullptr)
         return E_POINTER;
-
-    // winrt::com_ptr<IMFMediaSink> sink = nullptr;
-    // if (auto hr = activate->ActivateObject(IID_IMFMediaSink, sink.put_void()); FAILED(hr))
-    //     return hr;
-    // winrt::com_ptr<IMFStreamSink> stream_sink = nullptr;
-    // DWORD stream_count = 0;
-    // sink->GetStreamSinkCount(&stream_count);
-    // for (DWORD stream_index = 0; stream_index < stream_count; ++stream_index) {
-    //     if (auto hr = sink->GetStreamSinkByIndex(stream_index, stream_sink.put()); FAILED(hr))
-    //         continue;
-    //     break;
-    // }
-    // DWORD id = 0;
-    // if (auto hr = stream_sink->GetIdentifier(&id); FAILED(hr))
-    //     return hr;
 
     output = nullptr;
     MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, output.put());
@@ -128,7 +130,8 @@ void mf_audio_renderer_t::start() noexcept(false) {
     PropVariantInit(&vars);
     HRESULT hr = session->Start(nullptr, &vars);
     PropVariantClear(&vars);
-    winrt::check_hresult(hr);
+    if (FAILED(hr))
+        throw winrt::hresult_error{hr};
 }
 
 void mf_audio_renderer_t::stop() noexcept(false) {
@@ -139,11 +142,4 @@ void mf_audio_renderer_t::stop() noexcept(false) {
 void mf_audio_renderer_t::pause() noexcept(false) {
     if (auto hr = session->Pause(); FAILED(hr))
         throw winrt::hresult_error{hr};
-}
-
-void mf_audio_renderer_t::resume() noexcept(false) {
-    PROPVARIANT vars{};
-    PropVariantInit(&vars);
-    PropVariantClear(&vars);
-    winrt::check_hresult(E_NOTIMPL);
 }
