@@ -2,18 +2,17 @@
     "default-registry": {
         "kind": "git",
         "repository": "https://github.com/Microsoft/vcpkg",
-        "baseline": "a34c873a9717a888f58dc05268dea15592c2f0ff"
+        "baseline": "3508985146f1b1d248c67ead13f8f54be5b4f5da"
     },
     "registries": [
         {
-            "packages": [
-                "opencl",
-                "opencl-headers",
-                "libdispatch"
-            ],
-            "baseline": "5c480eafdaacad6d4a1797dd794473e1eac81b4e",
+            "repository": "https://github.com/luncliff/vcpkg-registry",
             "kind": "git",
-            "repository": "https://github.com/luncliff/vcpkg-registry"
+            "packages": [
+                "opencl-headers",
+                "opencl"
+            ],
+            "baseline": "eedb4b5f6e0cd07dc35659f2ecd8f61ee186f772"
         }
     ]
 }
