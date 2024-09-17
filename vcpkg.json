@@ -1,5 +1,5 @@
 {
-    "name": "windows-vulkan-experiment",
+    "name": "meson-experiment",
     "version-semver": "0.1.0",
     "description": "...",
     "homepage": "https://github.com/luncliff",
@@ -14,9 +14,9 @@
             "name": "spdlog",
             "version>=": "1.13.0"
         },
-        "libdispatch",
         "vulkan",
         "vulkan-hpp",
+        "opencl-headers",
         "opencl",
         {
             "name": "gtest",

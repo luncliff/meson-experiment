@@ -54,7 +54,7 @@ jobs:
         id: vcpkg
         with:
           vcpkgDirectory: "C:/vcpkg" # VCPKG_INSTALLATION_ROOT
-          vcpkgGitCommitId: "a34c873a9717a888f58dc05268dea15592c2f0ff" # 2024.03.25
+          vcpkgGitCommitId: "3508985146f1b1d248c67ead13f8f54be5b4f5da" # 2024.08.23
           runVcpkgInstall: true
           runVcpkgFormatString: '[`install`, `--clean-buildtrees-after-build`, `--clean-packages-after-build`, `--triplet`, `$[env.VCPKG_DEFAULT_TRIPLET]`, `--x-install-root`, `$[env.VCPKG_INSTALL_DIR]`]'
         env:
