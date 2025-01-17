@@ -102,15 +102,24 @@ jobs:
       - name: "Run vcpkg integrate"
         run: vcpkg integrate install
 
-      - name: "Run meson(x64-windows)"
+      - name: "Run meson(debug)"
+        run: |
+          meson setup --backend vs2022 --vsenv `
+            --cross-file "meson-x64-windows.ini" `
+            --prefix "${{ github.workspace }}/externals/x64-windows/debug" `
+            --buildtype debug `
+            "build-dbg"
+          meson compile -C "build-dbg"
+          meson install -C "build-dbg"
+
+      - name: "Run meson(release)"
         run: |
           meson setup --backend vs2022 --vsenv `
             --cross-file "meson-x64-windows.ini" `
             --prefix "${{ github.workspace }}/externals/x64-windows" `
-            --buildtype debug `
-            "builddir"
-          meson compile -C "builddir"
-          meson install -C "builddir"
+            "build-rel"
+          meson compile -C "build-rel"
+          meson install -C "build-rel"
 
       - name: "Run nuget restore"
         run: |
@@ -118,12 +127,22 @@ jobs:
           nuget restore sample.vcxproj -SolutionDirectory .
         working-directory: sample
 
-      - name: "Run MSBuild"
+      - name: "Run MSBuild(x64, Debug)"
         run: |
           MSBuild sample.sln `
             /p:Platform=x64 `
             /p:AppxBundlePlatforms=x64 `
             /p:Configuration=Debug `
+            /p:AppxPackageDir="${{ github.workspace }}/outputs" `
+            /p:GenerateAppxPackageOnBuild=false
+        working-directory: sample
+
+      - name: "Run MSBuild(x64, Release)"
+        run: |
+          MSBuild sample.sln `
+            /p:Platform=x64 `
+            /p:AppxBundlePlatforms=x64 `
+            /p:Configuration=Release `
             /p:AppxPackageDir="${{ github.workspace }}/outputs" `
             /p:GenerateAppxPackageOnBuild=false
         working-directory: sample

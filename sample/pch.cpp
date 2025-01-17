@@ -5,3 +5,5 @@
 
 #include <experiment/experiment.hpp>
 #include <spdlog/spdlog.h>
+
+#pragma comment(lib, "experiment.lib")
