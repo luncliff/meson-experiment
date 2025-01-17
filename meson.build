@@ -5,17 +5,25 @@
 # https://mesonbuild.com/Unit-tests.html
 # https://mesonbuild.com/Machine-files.html
 #
-project('experiment', 'cpp',
+project(
+  'experiment',
+  'cpp',
   meson_version: '>=1.5.0',
   version: '0.1',
-  default_options: ['cpp_std=c++20']
+  default_options: ['cpp_std=c++20'],
 )
 
 compiler = meson.get_compiler('cpp')
 
 system_deps = []
 if target_machine.system() == 'windows'
-  add_global_arguments('/DNOMINMAX', language: 'cpp')
+  add_global_arguments(
+    [
+      '/DNOMINMAX', # ...
+      '/D_INTERFACE_=__declspec(dllexport)',
+    ],
+    language: 'cpp',
+  )
   system_deps = [
     compiler.find_library('kernel32', required: true),
     compiler.find_library('d3d11', required: true),
@@ -35,41 +43,36 @@ endif
 if target_machine.system() == 'darwin'
   external_deps += [
     compiler.find_library('c++', required: true),
-    dependency('appleframeworks', modules:['Foundation'])
+    dependency('appleframeworks', modules: ['Foundation']),
   ]
 endif
 
 if get_option('vulkan')
   external_deps += [
-    dependency('Vulkan', method: 'cmake', modules: ['Vulkan::Vulkan'], required: true)
+    dependency('Vulkan', method: 'cmake', modules: ['Vulkan::Vulkan'], required: true),
   ]
 endif
 if get_option('opencl')
   external_deps += [
-    dependency('OpenCL', method: 'cmake', modules: ['OpenCL::OpenCL'], required: true)
+    dependency('OpenCL', method: 'cmake', modules: ['OpenCL::OpenCL'], required: true),
   ]
 endif
 
-public_headers = [
-  'src/experiment.hpp'
-]
+public_headers = ['src/experiment.hpp']
 
-lib1 = shared_library('experiment',
+lib1 = shared_library(
+  'experiment',
   include_directories: join_paths('.', 'src'),
-  sources:  [
-    public_headers,
-    'src/experiment.cpp'
-  ],
-  dependencies: [ system_deps, external_deps ],
-  cpp_args: [ '/D_INTERFACE_=__declspec(dllexport)' ],
+  sources: [public_headers, 'src/experiment.cpp'],
+  dependencies: [system_deps, external_deps],
   install: true,
-  install_dir: get_option('libdir')
+  install_dir: get_option('libdir'),
 )
 
 install_headers(public_headers, subdir: 'experiment')
 install_data(
-  sources: [ 'LICENSE' ],
-  install_dir: join_paths(get_option('infodir'), meson.project_name())
+  sources: ['LICENSE'],
+  install_dir: join_paths(get_option('infodir'), meson.project_name()),
 )
 
 # https://mesonbuild.com/Pkgconfig-module.html
@@ -79,9 +82,9 @@ pkg.generate(lib1, description: '...')
 # https://mesonbuild.com/CMake-module.html
 cmake = import('cmake')
 cmake.configure_package_config_file(
-    name: 'experiment',
-    input: 'experiment.cmake.in',
-    configuration: configuration_data()
+  name: 'experiment',
+  input: 'experiment.cmake.in',
+  configuration: configuration_data(),
 )
 cmake.write_basic_package_version_file(name: 'experiment', version: '0.1')
 
@@ -92,40 +95,42 @@ if get_option('tests')
   endif
   benchmark_dep = dependency('benchmark', version: '>=1.8', method: 'pkg-config', required: true)
 
-  exe1 = executable('test-program',
+  exe1 = executable(
+    'test-program',
     include_directories: join_paths('.', 'src'),
-    sources: [
-      public_headers,
-      'test/test_vulkan.cpp',
-      'test/test_main.cpp'
-    ],
-    dependencies: [ system_deps, external_deps, gtest_dep ],
-    link_with: [ lib1 ],
+    sources: [public_headers, 'test/test_vulkan.cpp', 'test/test_main.cpp'],
+    dependencies: [system_deps, external_deps, gtest_dep],
+    link_with: [lib1],
     install: true,
-    install_dir: get_option('bindir')
+    install_dir: get_option('bindir'),
   )
 
-  exe2 = executable('benchmark-program',
+  exe2 = executable(
+    'benchmark-program',
     include_directories: join_paths('.', 'src'),
-    sources: [
-      public_headers,
-      'test/benchmark_main.cpp'
-    ],
-    dependencies: [ system_deps, external_deps, benchmark_dep ],
-    link_with: [ lib1 ],
+    sources: [public_headers, 'test/benchmark_main.cpp'],
+    dependencies: [system_deps, external_deps, benchmark_dep],
+    link_with: [lib1],
     install: true,
-    install_dir: get_option('bindir')
+    install_dir: get_option('bindir'),
   )
 
   if target_machine.system() == 'windows'
-    test('test-1', exe1,
-      args: [ '--gtest_output=test-1.xml' ],
+    test(
+      'test-1',
+      exe1,
+      args: ['--gtest_output=test-1.xml'],
       # env: env, # customized PATH # https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
-      protocol: 'gtest'
+      protocol: 'gtest',
     )
-    benchmark('benchmark-1', exe2,
-      args: [ '--benchmark_out=benchmark-results.json', '--benchmark_out_format=json' ],
-      timeout: 40
+    benchmark(
+      'benchmark-1',
+      exe2,
+      args: [
+        '--benchmark_out=benchmark-results.json',
+        '--benchmark_out_format=json',
+      ],
+      timeout: 40,
     )
   endif
 endif
