@@ -1,4 +1,10 @@
 
+### References
+
+* https://mesonbuild.com/Reference-tables.html
+* https://mesonbuild.com/Machine-files.html
+* https://mesonbuild.com/Cross-compilation.html
+
 ## How To
 
 ### Setup

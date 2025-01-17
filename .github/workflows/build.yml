@@ -33,7 +33,6 @@ jobs:
 
       - uses: lukka/get-cmake@v3.31.4
       - uses: lukka/run-vcpkg@v11.5
-        id: vcpkg
         with:
           vcpkgDirectory: "C:/vcpkg" # VCPKG_INSTALLATION_ROOT
           vcpkgGitCommitId: "6f29f12e82a8293156836ad81cc9bf5af41fe836" # 2025.01.13
@@ -68,7 +67,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        triplet: [x64-osx]
+        triplet: [arm64-osx]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -81,10 +80,8 @@ jobs:
 
       - uses: lukka/get-cmake@v3.31.4
       - uses: lukka/run-vcpkg@v11.5
-        id: vcpkg
         with:
-          vcpkgDirectory: "/usr/local/share/vcpkg"
-          vcpkgGitCommitId: "6f29f12e82a8293156836ad81cc9bf5af41fe836" # 2025.01.13
+          vcpkgDirectory: "/Users/Shared/vcpkg"
           vcpkgJsonGlob: '**/vcpkg.json'
           vcpkgConfigurationJsonGlob: '**/vcpkg-configuration.json'
           runVcpkgInstall: true
@@ -96,9 +93,8 @@ jobs:
       - name: "Run meson(setup, ${{ matrix.triplet }})"
         id: meson-setup
         run: |
-          meson setup --backend xcode `
-            --cross-file "meson-${{ matrix.triplet }}.ini" `
-            --buildtype debug `
+          meson setup --backend xcode \
+            --cross-file "meson-${{ matrix.triplet }}.ini" \
             "builddir"
 
       - name: "Run meson(build/install)"
