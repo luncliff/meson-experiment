@@ -61,7 +61,8 @@ jobs:
         if: always()
         with:
           name: meson-logs
-          path: build/meson-logs/
+          path: builddir/meson-logs/
+          retention-days: 1
 
   windows_sample_x64:
     runs-on: windows-latest
@@ -98,7 +99,7 @@ jobs:
           VCPKG_INSTALL_DIR: "${{ github.workspace }}/externals"
           VCPKG_TARGET_TRIPLET: "x64-windows"
 
-      - name: "Run vcpkg install"
+      - name: "Run vcpkg integrate"
         run: vcpkg integrate install
 
       - name: "Run meson(x64-windows)"
@@ -114,6 +115,7 @@ jobs:
       - name: "Run nuget restore"
         run: |
           nuget restore sample.sln
+          nuget restore sample.vcxproj -SolutionDirectory .
         working-directory: sample
 
       - name: "Run MSBuild"
@@ -122,7 +124,7 @@ jobs:
             /p:Platform=x64 `
             /p:AppxBundlePlatforms=x64 `
             /p:Configuration=Debug `
-            /p:AppxPackageDir="C:/Users/USER/Desktop/meson-experiment/outputs" `
+            /p:AppxPackageDir="${{ github.workspace }}/outputs" `
             /p:GenerateAppxPackageOnBuild=false
         working-directory: sample
 
@@ -169,4 +171,5 @@ jobs:
         if: always()
         with:
           name: meson-logs
-          path: build/meson-logs/
+          path: builddir/meson-logs/
+          retention-days: 1
