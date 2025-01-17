@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #if defined(_WIN32)
 #include <winrt/windows.foundation.h>
 

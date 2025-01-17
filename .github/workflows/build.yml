@@ -100,7 +100,7 @@ jobs:
       - name: "Run meson(build/install)"
         run: |
           meson compile -C "builddir"
-          meson install -C "builddir"
+          # meson install -C "builddir"
 
       - uses: actions/upload-artifact@v4.3.1
         if: always()
