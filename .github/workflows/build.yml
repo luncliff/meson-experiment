@@ -60,7 +60,7 @@ jobs:
       - uses: actions/upload-artifact@v4.3.1
         if: always()
         with:
-          name: meson-logs
+          name: meson-logs-windows
           path: builddir/meson-logs/
           retention-days: 1
 
@@ -170,6 +170,6 @@ jobs:
       - uses: actions/upload-artifact@v4.3.1
         if: always()
         with:
-          name: meson-logs
+          name: meson-logs-macos
           path: builddir/meson-logs/
           retention-days: 1
