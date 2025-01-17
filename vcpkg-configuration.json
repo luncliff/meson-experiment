@@ -2,17 +2,17 @@
     "default-registry": {
         "kind": "git",
         "repository": "https://github.com/Microsoft/vcpkg",
-        "baseline": "3508985146f1b1d248c67ead13f8f54be5b4f5da"
+        "baseline": "6f29f12e82a8293156836ad81cc9bf5af41fe836"
     },
     "registries": [
         {
-            "repository": "https://github.com/luncliff/vcpkg-registry",
             "kind": "git",
+            "repository": "https://github.com/luncliff/vcpkg-registry",
+            "baseline": "c1b1823f9bec0c24b2b903ef3bce7dafc869ea0a",
             "packages": [
                 "opencl-headers",
                 "opencl"
-            ],
-            "baseline": "eedb4b5f6e0cd07dc35659f2ecd8f61ee186f772"
+            ]
         }
     ]
 }

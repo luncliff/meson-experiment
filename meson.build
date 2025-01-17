@@ -1,19 +1,4 @@
 #
-# vcpkg install --triplet x64-windows --x-install-root externals
-# $workspace = $(Get-Location)
-#
-# meson setup --backend vs2022 --vsenv `
-#   --prefix "$workspace/install" `
-#   --buildtype debug `
-#   --pkg-config-path "$workspace/externals/x64-windows/debug/lib/pkgconfig" `
-#   --build.pkg-config-path "$workspace/externals/x64-windows/debug/lib/pkgconfig" `
-#   --cmake-prefix-path "$workspace/externals/x64-windows" `
-#   --build.cmake-prefix-path "$workspace/externals/x64-windows" `
-#   "build-x64-windows"
-# meson compile -C "build-x64-windows"
-# meson install -C "build-x64-windows"
-# meson test    -C "build-x64-windows" --verbose
-#
 # https://mesonbuild.com/Builtin-options.html
 # https://mesonbuild.com/Reference-manual.html
 # https://mesonbuild.com/Installing.html
@@ -23,109 +8,63 @@
 project('experiment', 'cpp',
   meson_version: '>=1.4.0',
   version: '0.1',
-  default_options: ['warning_level=3', 'cpp_std=c++20']
+  default_options: ['cpp_std=c++20']
 )
-# message('cross build?: ', meson.is_cross_build())
-
-# https://mesonbuild.com/Reference-manual_returned_env.html
-env = environment()
-if build_machine.system() == 'windows'
-  vcpkg = find_program('vcpkg.exe', required: false)
-  # env.prepend('VCPKG_ROOT', ...)
-  cmake = find_program('cmake', required: true)
-endif
-
-root = meson.current_source_dir()
-triplet = get_option('target_triplet')
-message('Using target_triplet:', triplet)
-
-externals = root / 'externals' / triplet
-if get_option('buildtype') == 'debug'
-  externals = externals / 'debug'
-endif
-message('Using externals:', externals)
-
-# meson compile -C "..." cmake_copy_external_bins
-run_target('cmake_copy_external_bins', command: [cmake, '-E', 'copy_directory', externals / 'bin', meson.current_build_dir()])
 
 compiler = meson.get_compiler('cpp')
+
+system_deps = []
 if target_machine.system() == 'windows'
   add_global_arguments('/DNOMINMAX', language: 'cpp')
+  system_deps = [
+    compiler.find_library('kernel32', required: true),
+    compiler.find_library('d3d11', required: true),
+    compiler.find_library('d3d12', required: true),
+    compiler.find_library('dxgi', required: true),
+  ]
 endif
 
-system_dependencies = [
-  compiler.find_library('kernel32', required: true),
-  compiler.find_library('d3d11', required: true),
-  compiler.find_library('d3d12', required: true),
-  compiler.find_library('dxgi', required: true),
-  dependency('vulkan', version: '>=1.3.0', method: 'auto', required: true)
-]
-
-external_dependencies = [
-  compiler.find_library('dispatch', dirs: [ externals / 'lib'], required: true),
-  dependency('fmt', method: 'cmake', modules: ['fmt::fmt'], required: true),
+external_deps = [
   dependency('spdlog', method: 'cmake', modules: ['spdlog::spdlog'], required: true),
-  dependency('OpenCL', method: 'cmake', modules: ['OpenCL::OpenCL'], required: true)
 ]
+if target_machine.system() == 'windows'
+  external_deps += [
+    compiler.find_library('dispatch', required: true),
+  ]
+endif
+if target_machine.system() == 'darwin'
+  external_deps += [
+    compiler.find_library('c++', required: true),
+    dependency('appleframeworks', modules:['Foundation'])
+  ]
+endif
+
+if get_option('vulkan')
+  external_deps += [
+    dependency('Vulkan', method: 'cmake', modules: ['Vulkan::Vulkan'], required: true)
+  ]
+endif
+if get_option('opencl')
+  external_deps += [
+    dependency('OpenCL', method: 'cmake', modules: ['OpenCL::OpenCL'], required: true)
+  ]
+endif
 
 public_headers = [
-  'include/experiment.hpp'
+  'src/experiment.hpp'
 ]
 
 lib1 = shared_library('experiment',
-  include_directories: join_paths('.', 'include'),
+  include_directories: join_paths('.', 'src'),
   sources:  [
     public_headers,
     'src/experiment.cpp'
   ],
-  dependencies: [ system_dependencies, external_dependencies ],
+  dependencies: [ system_deps, external_deps ],
   cpp_args: [ '/D_INTERFACE_=__declspec(dllexport)' ],
   install: true,
   install_dir: get_option('libdir')
 )
-
-gtest_dep = dependency('gtest', version: '>=1.14.0', method: 'pkg-config', required: false)
-if gtest_dep.found() == false
-  gtest_dep = dependency('GTest', method: 'cmake', modules: ['GTest::gtest'], required: true)
-endif
-benchmark_dep = dependency('benchmark', version: '>=1.8', method: 'pkg-config', required: true)
-
-exe1 = executable('test-program',
-  include_directories: join_paths('.', 'include'),
-  sources: [
-    public_headers,
-    'test/test_vulkan.cpp',
-    'test/test_main.cpp'
-  ],
-  dependencies: [ system_dependencies, external_dependencies, gtest_dep ],
-  link_with: [ lib1 ],
-  install: true,
-  install_dir: get_option('bindir')
-)
-
-exe2 = executable('benchmark-program',
-  include_directories: join_paths('.', 'include'),
-  sources: [
-    public_headers,
-    'test/benchmark_main.cpp'
-  ],
-  dependencies: [ system_dependencies, external_dependencies, benchmark_dep ],
-  link_with: [ lib1 ],
-  install: true,
-  install_dir: get_option('bindir')
-)
-
-if target_machine.system() == 'windows'
-  test('test-1', exe1,
-    args: [ '--gtest_output=test-1.xml' ],
-    # env: env, # customized PATH # https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
-    protocol: 'gtest'
-  )
-  benchmark('benchmark-1', exe2,
-    args: [ '--benchmark_out=benchmark-results.json', '--benchmark_out_format=json' ],
-    timeout: 40
-  )
-endif
 
 install_headers(public_headers, subdir: 'experiment')
 install_data(
@@ -133,13 +72,60 @@ install_data(
   install_dir: join_paths(get_option('infodir'), meson.project_name())
 )
 
-pkg = import('pkgconfig') # https://mesonbuild.com/Pkgconfig-module.html
-pkg.generate(lib1, description: 'Test Interop between Windows DirectX Graphics Infrastructure (DXGI) and Vulkan SDK')
+# https://mesonbuild.com/Pkgconfig-module.html
+pkg = import('pkgconfig')
+pkg.generate(lib1, description: '...')
 
-cmake = import('cmake') # https://mesonbuild.com/CMake-module.html
+# https://mesonbuild.com/CMake-module.html
+cmake = import('cmake')
 cmake.configure_package_config_file(
     name: 'experiment',
     input: 'experiment.cmake.in',
     configuration: configuration_data()
 )
 cmake.write_basic_package_version_file(name: 'experiment', version: '0.1')
+
+if get_option('tests')
+  gtest_dep = dependency('gtest', version: '>=1.14.0', method: 'pkg-config', required: false)
+  if gtest_dep.found() == false
+    gtest_dep = dependency('GTest', method: 'cmake', modules: ['GTest::gtest'], required: true)
+  endif
+  benchmark_dep = dependency('benchmark', version: '>=1.8', method: 'pkg-config', required: true)
+
+  exe1 = executable('test-program',
+    include_directories: join_paths('.', 'src'),
+    sources: [
+      public_headers,
+      'test/test_vulkan.cpp',
+      'test/test_main.cpp'
+    ],
+    dependencies: [ system_deps, external_deps, gtest_dep ],
+    link_with: [ lib1 ],
+    install: true,
+    install_dir: get_option('bindir')
+  )
+
+  exe2 = executable('benchmark-program',
+    include_directories: join_paths('.', 'src'),
+    sources: [
+      public_headers,
+      'test/benchmark_main.cpp'
+    ],
+    dependencies: [ system_deps, external_deps, benchmark_dep ],
+    link_with: [ lib1 ],
+    install: true,
+    install_dir: get_option('bindir')
+  )
+
+  if target_machine.system() == 'windows'
+    test('test-1', exe1,
+      args: [ '--gtest_output=test-1.xml' ],
+      # env: env, # customized PATH # https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order
+      protocol: 'gtest'
+    )
+    benchmark('benchmark-1', exe2,
+      args: [ '--benchmark_out=benchmark-results.json', '--benchmark_out_format=json' ],
+      timeout: 40
+    )
+  endif
+endif

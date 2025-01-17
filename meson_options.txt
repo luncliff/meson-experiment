@@ -1,2 +1,5 @@
-option('target_triplet', type:'string', value:'x64-windows', description:'Target triplet for vcpkg toolchain')
-option('host_triplet', type:'string', value:'x64-windows', description:'Host triplet for vcpkg toolchain')
+# https://mesonbuild.com/Builtin-options.html
+option('tests', type:'boolean', value:false, description:'Build test programs')
+
+option('vulkan', type:'boolean', value:false, description:'Enable Vulkan sources')
+option('opencl', type:'boolean', value:false, description:'Enable OpenCL sources')

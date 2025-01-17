@@ -1,30 +1,38 @@
 {
-    "name": "meson-experiment",
-    "version-semver": "0.1.0",
-    "description": "...",
-    "homepage": "https://github.com/luncliff",
-    "maintainers": "Park DongHa. <luncliff@gmail.com>",
-    "supports": "windows",
-    "dependencies": [
-        {
-            "name": "fmt",
-            "version>=": "10.1.0"
-        },
-        {
-            "name": "spdlog",
-            "version>=": "1.13.0"
-        },
-        "vulkan",
-        "vulkan-hpp",
-        "opencl-headers",
+  "name": "meson-experiment",
+  "version-date": "2025-01-17",
+  "maintainers": "PARK DongHa <luncliff@gmail.com>",
+  "description": "...",
+  "homepage": "https://github.com/luncliff",
+  "supports": "windows | osx",
+  "dependencies": [
+    {
+      "name": "spdlog",
+      "version>=": "1.13.0"
+    }
+  ],
+  "features": {
+    "opencl": {
+      "description": "Enable OpenCL sources",
+      "dependencies": [
         "opencl",
-        {
-            "name": "gtest",
-            "version>=": "1.14.0"
-        },
-        {
-            "name": "benchmark",
-            "version>=": "1.8.0"
-        }
-    ]
+        "opencl-headers"
+      ]
+    },
+    "tests": {
+      "description": "Build test executables",
+      "dependencies": [
+        "gtest",
+        "benchmark"
+      ]
+    },
+    "vulkan": {
+      "description": "Enable Vulkan sources",
+      "supports": "windows",
+      "dependencies": [
+        "vulkan",
+        "vulkan-hpp"
+      ]
+    }
+  }
 }
