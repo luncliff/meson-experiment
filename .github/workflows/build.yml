@@ -1,0 +1,113 @@
+name: "Build"
+
+on: [push, pull_request, workflow_dispatch]
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref_name }}"
+  cancel-in-progress: true
+
+permissions:
+  checks: write
+  pull-requests: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        triplet: [x64-windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2 # https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: "Run pip"
+        run: python -m pip install -r requirements.txt
+
+      - name: "Run chocolatey"
+        run: |
+          choco install --yes pkgconfiglite
+
+      - uses: lukka/get-cmake@v3.31.4
+      - uses: lukka/run-vcpkg@v11.5
+        id: vcpkg
+        with:
+          vcpkgDirectory: "C:/vcpkg" # VCPKG_INSTALLATION_ROOT
+          vcpkgGitCommitId: "6f29f12e82a8293156836ad81cc9bf5af41fe836" # 2025.01.13
+          vcpkgJsonGlob: '**/vcpkg.json'
+          vcpkgConfigurationJsonGlob: '**/vcpkg-configuration.json'
+          runVcpkgInstall: true
+          runVcpkgFormatString: '[`install`, `--clean-buildtrees-after-build`, `--x-install-root`, `$[env.VCPKG_INSTALL_DIR]`]'
+        env:
+          VCPKG_INSTALL_DIR: "${{ github.workspace }}/externals"
+          VCPKG_TARGET_TRIPLET: "${{ matrix.triplet }}"
+
+      - name: "Run meson(setup, ${{ matrix.triplet }})"
+        id: meson-setup
+        run: |
+          meson setup --backend vs2022 --vsenv `
+            --cross-file "meson-${{ matrix.triplet }}.ini" `
+            --buildtype debug `
+            "builddir"
+
+      - name: "Run meson(build/install)"
+        run: |
+          meson compile -C "builddir"
+          meson install -C "builddir"
+
+      - uses: actions/upload-artifact@v4.3.1
+        if: always()
+        with:
+          name: meson-logs
+          path: build/meson-logs/
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        triplet: [x64-osx]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: "Run pip"
+        run: python -m pip install -r requirements.txt
+
+      - uses: lukka/get-cmake@v3.31.4
+      - uses: lukka/run-vcpkg@v11.5
+        id: vcpkg
+        with:
+          vcpkgDirectory: "/usr/local/share/vcpkg"
+          vcpkgGitCommitId: "6f29f12e82a8293156836ad81cc9bf5af41fe836" # 2025.01.13
+          vcpkgJsonGlob: '**/vcpkg.json'
+          vcpkgConfigurationJsonGlob: '**/vcpkg-configuration.json'
+          runVcpkgInstall: true
+          runVcpkgFormatString: '[`install`, `--clean-buildtrees-after-build`, `--x-install-root`, `$[env.VCPKG_INSTALL_DIR]`]'
+        env:
+          VCPKG_INSTALL_DIR: "${{ github.workspace }}/externals"
+          VCPKG_TARGET_TRIPLET: "${{ matrix.triplet }}"
+
+      - name: "Run meson(setup, ${{ matrix.triplet }})"
+        id: meson-setup
+        run: |
+          meson setup --backend xcode `
+            --cross-file "meson-${{ matrix.triplet }}.ini" `
+            --buildtype debug `
+            "builddir"
+
+      - name: "Run meson(build/install)"
+        run: |
+          meson compile -C "builddir"
+          meson install -C "builddir"
+
+      - uses: actions/upload-artifact@v4.3.1
+        if: always()
+        with:
+          name: meson-logs
+          path: build/meson-logs/
