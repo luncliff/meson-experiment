@@ -19,6 +19,36 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.hpp>
 
+struct VulkanTest : public testing::Test {
+    HMODULE mod = nullptr;
+
+    void SetUp() final {
+        mod = LoadLibraryW(L"vulkan-1.dll");
+        // error?
+    }
+    void TearDown() final {
+        if (mod == nullptr)
+            return;
+        EXPECT_TRUE(FreeLibrary(mod));
+    }
+};
+
+TEST_F(VulkanTest, AvailableVersion) {
+    if (mod == NULL)
+        GTEST_SKIP();
+    ASSERT_TRUE(check_vulkan_available(), true);
+
+    uint32_t api_version = 0;
+    uint32_t runtime_version = 0;
+    bool ok = check_vulkan_runtime(api_version, runtime_version);
+    ASSERT_NE(api_version, 0);
+    if (!ok) {
+        ASSERT_EQ(runtime_version, 0);
+        return;
+    }
+    ASSERT_NE(runtime_version, 0);
+}
+
 struct VulkanDynamicTest : public testing::Test {
     vk::DynamicLoader loader{"vulkan-1.dll"};
     vk::DispatchLoaderDynamic dynamic{};

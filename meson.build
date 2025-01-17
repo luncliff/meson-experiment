@@ -6,7 +6,7 @@
 # https://mesonbuild.com/Machine-files.html
 #
 project('experiment', 'cpp',
-  meson_version: '>=1.4.0',
+  meson_version: '>=1.5.0',
   version: '0.1',
   default_options: ['cpp_std=c++20']
 )
@@ -28,9 +28,9 @@ external_deps = [
   dependency('spdlog', method: 'cmake', modules: ['spdlog::spdlog'], required: true),
 ]
 if target_machine.system() == 'windows'
-  external_deps += [
-    compiler.find_library('dispatch', required: true),
-  ]
+  # external_deps += [
+  #   compiler.find_library('dispatch', required: true),
+  # ]
 endif
 if target_machine.system() == 'darwin'
   external_deps += [
